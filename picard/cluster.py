@@ -6,18 +6,19 @@
 # Copyright (C) 2006-2008, 2011 Lukáš Lalinský
 # Copyright (C) 2008 Hendrik van Antwerpen
 # Copyright (C) 2008 Will
-# Copyright (C) 2010-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2010-2011, 2014, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2012 Chad Wilson
 # Copyright (C) 2012 Wieland Hoffmann
-# Copyright (C) 2013-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2021 Laurent Monin
 # Copyright (C) 2014, 2017 Sophist-UK
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Antonio Larrosa
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2020 Ray Bouchard
 # Copyright (C) 2020 Gabriel Ferreira
+# Copyright (C) 2020 Ray Bouchard
+# Copyright (C) 2021 Petit Minion
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -46,7 +47,7 @@ import re
 
 from PyQt5 import QtCore
 
-from picard import config
+from picard.config import get_config
 from picard.const import QUERY_LIMIT
 from picard.const.sys import IS_WIN
 from picard.metadata import (
@@ -82,15 +83,13 @@ class FileList(QtCore.QObject, FileListItem):
         FileListItem.__init__(self, files)
         self.metadata = Metadata()
         self.orig_metadata = Metadata()
-        for file in self.files:
-            if self.can_show_coverart:
+        if self.files and self.can_show_coverart:
+            for file in self.files:
                 file.metadata_images_changed.connect(self.update_metadata_images)
-        if self.files:
             update_metadata_images(self)
 
     def iterfiles(self, save=False):
-        for file in self.files:
-            yield file
+        yield from self.files
 
     def update(self):
         pass
@@ -128,7 +127,7 @@ class Cluster(FileList):
         if self.related_album:
             return '<Cluster %s %r>' % (
                 self.related_album.id,
-                self.related_album.metadata[u"album"] + '/' + self.metadata['album']
+                self.related_album.metadata["album"] + '/' + self.metadata['album']
             )
         return '<Cluster %r>' % self.metadata['album']
 
@@ -160,9 +159,9 @@ class Cluster(FileList):
         added_files = sorted(added_files, key=attrgetter('discnumber', 'tracknumber', 'base_filename'))
         self.files.extend(added_files)
         self.metadata['totaltracks'] = len(self.files)
-        self.item.add_files(added_files)
         if self.can_show_coverart:
             add_metadata_images(self, added_files)
+        self.item.add_files(added_files)
         if new_album:
             self._update_related_album(added_files=added_files)
 
@@ -225,13 +224,16 @@ class Cluster(FileList):
         else:
             return False
 
+    def can_submit(self):
+        return not self.special and self.files
+
     def is_album_like(self):
         return True
 
     def column(self, column):
         if column == 'title':
             return '%s (%d)' % (self.metadata['album'], len(self.files))
-        elif self.special and (column in ['~length', 'album']):
+        elif self.special and (column in ['~length', 'album', 'covercount']):
             return ''
         elif column == '~length':
             return format_time(self.metadata.length)
@@ -241,6 +243,8 @@ class Cluster(FileList):
             return self.metadata['totaltracks']
         elif column == 'discnumber':
             return self.metadata['totaldiscs']
+        elif column == 'covercount':
+            return self.cover_art_description()
         return self.metadata[column]
 
     def _lookup_finished(self, document, http, error):
@@ -259,6 +263,7 @@ class Cluster(FileList):
             )
 
         if releases:
+            config = get_config()
             albumid = self._match_to_album(releases, threshold=config.setting['cluster_lookup_threshold'])
         else:
             albumid = None
@@ -304,6 +309,7 @@ class Cluster(FileList):
 
     @staticmethod
     def cluster(files, threshold, tagger=None):
+        config = get_config()
         win_compat = config.setting["windows_compatibility"] or IS_WIN
         artist_dict = ClusterDict()
         album_dict = ClusterDict()
@@ -375,7 +381,7 @@ class Cluster(FileList):
 
 class UnclusteredFiles(Cluster):
 
-    """Special cluster for 'Unmatched Files' which have no PUID and have not been clustered."""
+    """Special cluster for 'Unmatched Files' which have not been clustered."""
 
     def __init__(self):
         super().__init__(_("Unclustered Files"), special=True)
@@ -472,7 +478,7 @@ class ClusterDict(object):
         index, count = self.words[word]
         if index == -1:
             token = self.tokenize(word)
-            if token == '':
+            if token == '':  # nosec
                 return -1
             index = self.id
             self.ids[index] = (word, token)

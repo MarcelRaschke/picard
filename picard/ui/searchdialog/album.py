@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2016 Rahul Raturi
-# Copyright (C) 2018-2019 Laurent Monin
-# Copyright (C) 2018-2020 Philipp Wolfer
+# Copyright (C) 2018-2020 Laurent Monin
+# Copyright (C) 2018-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,10 +30,8 @@ from PyQt5 import (
 )
 from PyQt5.QtCore import pyqtSignal
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import Option
 from picard.const import (
     CAA_HOST,
     CAA_PORT,
@@ -138,7 +136,7 @@ class AlbumSearchDialog(SearchDialog):
     dialog_header_state = "albumsearchdialog_header_state"
 
     options = [
-        config.Option("persist", dialog_header_state, QtCore.QByteArray())
+        Option("persist", dialog_header_state, QtCore.QByteArray())
     ]
 
     def __init__(self, parent, force_advanced_search=None):

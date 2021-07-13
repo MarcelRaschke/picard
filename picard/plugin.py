@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2007-2008 Lukáš Lalinský
 # Copyright (C) 2009 Carlin Mangar
-# Copyright (C) 2009, 2014, 2017-2020 Philipp Wolfer
+# Copyright (C) 2009, 2014, 2017-2021 Philipp Wolfer
 # Copyright (C) 2011 johnny64
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2013 Sebastian Ramacher
@@ -13,7 +13,7 @@
 # Copyright (C) 2013-2014 Sophist-UK
 # Copyright (C) 2014 Johannes Dewender
 # Copyright (C) 2014 Shadab Zafar
-# Copyright (C) 2014-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2014-2015, 2018-2020 Laurent Monin
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
 # Copyright (C) 2018 Vishal Choudhary
@@ -36,16 +36,23 @@
 from collections import defaultdict
 import os.path
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 from picard.const import USER_PLUGIN_DIR
 from picard.version import (
     Version,
     VersionError,
 )
 
+
+try:
+    from markdown import markdown
+except ImportError:
+    def markdown(text):
+        # Simple fallback, just make sure line breaks are applied
+        if not text:
+            return ''
+        return text.strip().replace('\n', '<br>\n')
 
 _PLUGIN_MODULE_PREFIX = "picard.plugins."
 _PLUGIN_MODULE_PREFIX_LEN = len(_PLUGIN_MODULE_PREFIX)
@@ -93,11 +100,11 @@ class ExtensionPoint(object):
             pass
 
     def __iter__(self):
-        enabled_plugins = config.setting["enabled_plugins"] if config.setting else []
+        config = get_config()
+        enabled_plugins = config.setting["enabled_plugins"] if config else []
         for name in self.__dict:
             if name is None or name in enabled_plugins:
-                for item in self.__dict[name]:
-                    yield item
+                yield from self.__dict[name]
 
 
 class PluginShared(object):
@@ -140,7 +147,7 @@ class PluginWrapper(PluginShared):
     @property
     def description(self):
         try:
-            return self.data['PLUGIN_DESCRIPTION']
+            return markdown(self.data['PLUGIN_DESCRIPTION'])
         except KeyError:
             return ""
 

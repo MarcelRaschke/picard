@@ -4,8 +4,8 @@
 #
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2018 Antonio Larrosa
-# Copyright (C) 2018-2019 Laurent Monin
-# Copyright (C) 2018-2020 Philipp Wolfer
+# Copyright (C) 2018-2020 Laurent Monin
+# Copyright (C) 2018-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -24,7 +24,7 @@
 
 from PyQt5 import QtCore
 
-from picard import config
+from picard.config import Option
 from picard.const import QUERY_LIMIT
 from picard.file import File
 from picard.mbjson import (
@@ -49,7 +49,7 @@ class TrackSearchDialog(SearchDialog):
     dialog_header_state = "tracksearchdialog_header_state"
 
     options = [
-        config.Option("persist", dialog_header_state, QtCore.QByteArray())
+        Option("persist", dialog_header_state, QtCore.QByteArray())
     ]
 
     def __init__(self, parent):

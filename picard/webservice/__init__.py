@@ -5,8 +5,9 @@
 # Copyright (C) 2007 Lukáš Lalinský
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2017 Sambhav Kothari
-# Copyright (C) 2018-2020 Philipp Wolfer
 # Copyright (C) 2018-2020 Laurent Monin
+# Copyright (C) 2018-2021 Philipp Wolfer
+# Copyright (C) 2021 Tche333
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -51,9 +52,9 @@ from picard import (
     PICARD_APP_NAME,
     PICARD_ORG_NAME,
     PICARD_VERSION_STR,
-    config,
     log,
 )
+from picard.config import get_config
 from picard.const import (
     CACHE_DIR,
     CACHE_SIZE_IN_BYTES,
@@ -271,6 +272,7 @@ class WebService(QtCore.QObject):
         self.oauth_manager = OAuthManager(self)
         self.set_cache()
         self.setup_proxy()
+        config = get_config()
         self.set_transfer_timeout(config.setting['network_transfer_timeout_seconds'])
         self.manager.finished.connect(self._process_reply)
         self._request_methods = {
@@ -332,6 +334,7 @@ class WebService(QtCore.QObject):
 
     def setup_proxy(self):
         proxy = QtNetwork.QNetworkProxy()
+        config = get_config()
         if config.setting["use_proxy"]:
             if config.setting["proxy_type"] == 'socks':
                 proxy.setType(QtNetwork.QNetworkProxy.Socks5Proxy)
@@ -490,6 +493,7 @@ class WebService(QtCore.QObject):
                 elif request.response_parser:
                     try:
                         document = request.response_parser(reply)
+                        log.debug("Response received: %s", document)
                     except Exception as e:
                         log.error("Unable to parse the response for %s: %s", url, e)
                         document = reply.readAll()

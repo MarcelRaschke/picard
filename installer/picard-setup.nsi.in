@@ -87,6 +87,7 @@ ReserveFile "${NSISDIR}\Plugins\x86-unicode\InstallOptions.dll"
 !insertmacro LOAD_LANGUAGE "English"
 ; !insertmacro LOAD_LANGUAGE "Arabic"
 !insertmacro LOAD_LANGUAGE "Albanian"
+!insertmacro LOAD_LANGUAGE "Bulgarian"
 ; !insertmacro LOAD_LANGUAGE "Catalan"
 ; !insertmacro LOAD_LANGUAGE "Czech"
 ; !insertmacro LOAD_LANGUAGE "Danish"
@@ -100,12 +101,13 @@ ReserveFile "${NSISDIR}\Plugins\x86-unicode\InstallOptions.dll"
 !insertmacro LOAD_LANGUAGE "Italian"
 !insertmacro LOAD_LANGUAGE "Japanese"
 ; !insertmacro LOAD_LANGUAGE "Korean"
+!insertmacro LOAD_LANGUAGE "Malay"
 ; !insertmacro LOAD_LANGUAGE "Norwegian"
 ; !insertmacro LOAD_LANGUAGE "Polish"
 ; !insertmacro LOAD_LANGUAGE "Portuguese"
 !insertmacro LOAD_LANGUAGE "PortugueseBR"
-; !insertmacro LOAD_LANGUAGE "Russian"
-; !insertmacro LOAD_LANGUAGE "SimpChinese"
+!insertmacro LOAD_LANGUAGE "Russian"
+!insertmacro LOAD_LANGUAGE "SimpChinese"
 ; !insertmacro LOAD_LANGUAGE "Slovak"
 ; !insertmacro LOAD_LANGUAGE "Slovenian"
 !insertmacro LOAD_LANGUAGE "Spanish"
@@ -207,7 +209,7 @@ SectionEnd
 Function un.onInit
   FindWindow $0 "${WNDCLASS}" "${WNDTITLE}"
   StrCmp $0 0 continueInstall
-    MessageBox MB_ICONSTOP|MB_OK "$(MsgApplicationRunning)"
+    MessageBox MB_ICONSTOP|MB_OK "$(MsgApplicationRunning)" /SD IDOK
     Abort
   continueInstall:
   !insertmacro INSTALLOPTIONS_EXTRACT "removeSettings.ini"
@@ -217,32 +219,47 @@ FunctionEnd
 Function .onInit
   ; Abort installation if this is not a 64 bit system
   ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP|MB_OK "$(MsgRequires64Bit)"
+    MessageBox MB_ICONSTOP|MB_OK "$(MsgRequires64Bit)" /SD IDOK
     Abort
   ${EndIf}
 
   ; Abort installation if Picard is currently running
   FindWindow $0 "${WNDCLASS}" "${WNDTITLE}"
   StrCmp $0 0 continueInstall
-    MessageBox MB_ICONSTOP|MB_OK "$(MsgApplicationRunning)"
+    MessageBox MB_ICONSTOP|MB_OK "$(MsgApplicationRunning)" /SD IDOK
     Abort
   continueInstall:
 
   ; Uninstall previous installation
-  ReadRegStr $R0 HKLM "${PRODUCT_UNINST_KEY}" "UninstallString"
-  StrCmp $R0 "" skipUninstall
-
-  MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(MsgAlreadyInstalled)" IDOK uninstall
-  Abort
+  ; $0 = Path to uninstaller
+  ; $1 = Previous installation directory
+  ReadRegStr $0 HKLM "${PRODUCT_UNINST_KEY}" "UninstallString"
+  StrCmp $0 "" skipUninstall
+    MessageBox MB_OKCANCEL|MB_ICONEXCLAMATION "$(MsgAlreadyInstalled)" /SD IDOK IDOK uninstall
+    Abort
 
   uninstall:
-  ClearErrors
-  Exec $R0
+    ClearErrors
+    ReadRegStr $1 HKLM "Software\MusicBrainz\${PRODUCT_NAME}" "InstallDir"
+    ; The _? must be set to the install directory, it also ensures ExecWait
+    ; actually waits for the installer to finish. We need to remove the
+    ; installer itself manually afterwards.
+    IfSilent silentUninstall
+    ExecWait '"$0" _?=$1' $2
+    Goto finalizeUninstall
+    silentUninstall:
+    ExecWait '"$0" /S _?=$1' $2
+  finalizeUninstall:
+    ; Delete the uninstaller if it finished with success (exit code 0)
+    IntCmp $2 0 "" endUninstall endUninstall
+    Delete "$0"
+    RMDir "$1"  ; Try to delete installation dir
+  endUninstall:
 
   ; Check if previous install location was inside $PROGRAMFILES32
-  ReadRegStr $R0 HKLM "Software\MusicBrainz\${PRODUCT_NAME}" "InstallDir"
+  ; If so, rewrite $INSTDIR to $PROGRAMFILES64
   StrLen $R1 $PROGRAMFILES32
-  StrCpy $R2 $R0 $R1
+  StrCpy $R2 $1 $R1
   StrCmp $R2 $PROGRAMFILES32 0 skipUninstall
     StrCpy $INSTDIR "$PROGRAMFILES64\${PRODUCT_NAME}"
 

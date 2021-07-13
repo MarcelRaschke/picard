@@ -4,8 +4,8 @@
 #
 # Copyright (C) 2006-2007 Lukáš Lalinský
 # Copyright (C) 2009 Nikolai Prokoschenko
-# Copyright (C) 2009, 2019-2020 Philipp Wolfer
-# Copyright (C) 2013, 2015, 2018-2019 Laurent Monin
+# Copyright (C) 2009, 2019-2021 Philipp Wolfer
+# Copyright (C) 2013, 2015, 2018-2020 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 #
 # This program is free software; you can redistribute it and/or
@@ -27,7 +27,7 @@ import re
 
 from PyQt5 import QtWidgets
 
-from picard import config
+from picard.config import get_config
 from picard.plugin import ExtensionPoint
 
 
@@ -75,6 +75,7 @@ class OptionsPage(QtWidgets.QWidget):
             options = self.options
         except AttributeError:
             return
+        config = get_config()
         old_options = {}
         for option in options:
             if option.section == 'setting':

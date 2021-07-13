@@ -3,14 +3,14 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2009, 2011-2012 Lukáš Lalinský
-# Copyright (C) 2008-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2011, 2014, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2011-2012 Johannes Weißl
 # Copyright (C) 2011-2014 Michael Wiencek
 # Copyright (C) 2011-2014 Wieland Hoffmann
 # Copyright (C) 2013 Calvin Walton
-# Copyright (C) 2013-2014, 2017-2019 Laurent Monin
-# Copyright (C) 2013-2015, 2017 Sophist-UK
+# Copyright (C) 2013-2014, 2017-2020 Laurent Monin
+# Copyright (C) 2013-2015, 2017, 2021 Sophist-UK
 # Copyright (C) 2015 Frederik “Freso” S. Olesen
 # Copyright (C) 2016 Christoph Reiter
 # Copyright (C) 2016-2018 Sambhav Kothari
@@ -193,6 +193,7 @@ class ID3File(File):
         'ASIN': 'asin',
         'MusicMagic Fingerprint': 'musicip_fingerprint',
         'ARTISTS': 'artists',
+        'DIRECTOR': 'director',
         'WORK': 'work',
         'Writer': 'writer',
         'SHOWMOVEMENT': 'showmovement',
@@ -373,7 +374,10 @@ class ID3File(File):
         tags = self._get_tags(filename)
         config = get_config()
         if config.setting['clear_existing_tags']:
+            cover = tags.getall('APIC') if config.setting["preserve_images"] else None
             tags.clear()
+            if cover:
+                tags.setall('APIC', cover)
         images_to_save = list(metadata.images.to_be_saved_to_tags())
         if images_to_save:
             tags.delall('APIC')
@@ -484,10 +488,13 @@ class ID3File(File):
                     if frameid == 'WCOP':
                         # Only add WCOP if there is only one license URL, otherwise use TXXX:LICENSE
                         if len(values) > 1 or not valid_urls:
+                            tags.delall('WCOP')
                             tags.add(self.build_TXXX(encoding, self.__rtranslate_freetext[name], values))
                         else:
+                            tags.delall('TXXX:' + self.__rtranslate_freetext[name])
                             tags.add(id3.WCOP(url=values[0]))
                     elif frameid == 'WOAR' and valid_urls:
+                        tags.delall('WOAR')
                         for url in values:
                             tags.add(id3.WOAR(url=url))
                 elif frameid.startswith('T') or frameid == 'MVNM':
@@ -573,13 +580,16 @@ class ID3File(File):
                     for key, frame in list(tags.items()):
                         if frame.FrameID == 'UFID' and frame.owner == 'http://musicbrainz.org':
                             del tags[key]
+                elif name == 'license':
+                    tags.delall(real_name)
+                    tags.delall('TXXX:' + self.__rtranslate_freetext[name])
                 elif real_name == 'POPM':
                     user_email = config.setting['rating_user_email']
                     for key, frame in list(tags.items()):
                         if frame.FrameID == 'POPM' and frame.email == user_email:
                             del tags[key]
                 elif real_name in self.__translate:
-                    del tags[real_name]
+                    tags.delall(real_name)
                 elif name.lower() in self.__rtranslate_freetext_ci:
                     delall_ci(tags, 'TXXX:' + self.__rtranslate_freetext_ci[name.lower()])
                 elif real_name in self.__translate_freetext:
@@ -643,36 +653,30 @@ class ID3File(File):
             tags.update_to_v24()
             tags.save(filename, v2_version=4, v1=v1)
 
-    @property
-    def new_metadata(self):
-        config = get_config()
-        if not config.setting["write_id3v23"]:
-            return self.metadata
+    def format_specific_metadata(self, metadata, tag, settings=None):
+        if not settings:
+            settings = get_config().setting
 
-        copy = Metadata()
-        copy.copy(self.metadata)
+        if not settings["write_id3v23"]:
+            return super().format_specific_metadata(metadata, tag, settings)
 
-        join_with = config.setting["id3v23_join_with"]
-        copy.multi_valued_joiner = join_with
+        values = metadata.getall(tag)
+        if not values:
+            return values
 
-        for name, values in copy.rawitems():
-            # ID3v23 can only save TDOR dates in YYYY format. Mutagen cannot
-            # handle ID3v23 dates which are YYYY-MM rather than YYYY or
-            # YYYY-MM-DD.
-            if name == "originaldate":
-                values = [v[:4] for v in values]
-            elif name == "date":
-                values = [(v[:4] if len(v) < 10 else v) for v in values]
+        if tag == "originaldate":
+            values = [v[:4] for v in values]
+        elif tag == "date":
+            values = [(v[:4] if len(v) < 10 else v) for v in values]
 
-            # If this is a multi-valued field, then it needs to be flattened,
-            # unless it's TIPL or TMCL which can still be multi-valued.
-            if (len(values) > 1 and name not in ID3File._rtipl_roles
-                    and not name.startswith("performer:")):
-                values = [join_with.join(values)]
+        # If this is a multi-valued field, then it needs to be flattened,
+        # unless it's TIPL or TMCL which can still be multi-valued.
+        if (len(values) > 1 and tag not in ID3File._rtipl_roles
+                and not tag.startswith("performer:")):
+            join_with = settings["id3v23_join_with"]
+            values = [join_with.join(values)]
 
-            copy[name] = values
-
-        return copy
+        return values
 
 
 class MP3File(ID3File):

@@ -4,15 +4,16 @@
 #
 # Copyright (C) 2006-2008, 2011 Lukáš Lalinský
 # Copyright (C) 2008-2009 Nikolai Prokoschenko
-# Copyright (C) 2008-2009, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2009, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011 Pavan Chander
 # Copyright (C) 2011-2012, 2019 Wieland Hoffmann
 # Copyright (C) 2011-2013 Michael Wiencek
-# Copyright (C) 2013, 2017-2019 Laurent Monin
+# Copyright (C) 2013, 2017-2021 Laurent Monin
 # Copyright (C) 2014 Sophist-UK
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Suhas
 # Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -31,19 +32,16 @@
 
 from PyQt5 import (
     QtCore,
-    QtGui,
     QtWidgets,
 )
 
-from picard import (
-    config,
-    log,
+from picard import log
+from picard.config import (
+    ListOption,
+    TextOption,
+    get_config,
 )
-from picard.const import DOCS_BASE_URL
-from picard.util import (
-    restore_method,
-    webbrowser2,
-)
+from picard.util import restore_method
 
 from picard.ui import (
     HashableTreeWidgetItem,
@@ -81,12 +79,9 @@ from picard.ui.util import StandardButton
 
 class OptionsDialog(PicardDialog, SingletonDialog):
 
-    autorestore = False
-
     options = [
-        config.TextOption("persist", "options_last_active_page", ""),
-        config.ListOption("persist", "options_pages_tree_state", []),
-        config.Option("persist", "options_splitter", QtCore.QByteArray()),
+        TextOption("persist", "options_last_active_page", ""),
+        ListOption("persist", "options_pages_tree_state", []),
     ]
 
     def add_pages(self, parent, default_page, parent_item):
@@ -134,7 +129,7 @@ class OptionsDialog(PicardDialog, SingletonDialog):
         self.ui.buttonbox.rejected.connect(self.reject)
         self.ui.reset_all_button.clicked.connect(self.confirm_reset_all)
         self.ui.reset_button.clicked.connect(self.confirm_reset)
-        self.ui.buttonbox.helpRequested.connect(self.help)
+        self.ui.buttonbox.helpRequested.connect(self.show_help)
 
         self.pages = []
         for Page in page_classes:
@@ -147,14 +142,14 @@ class OptionsDialog(PicardDialog, SingletonDialog):
         self.page_to_item = {}
         self.default_item = None
         if not default_page:
+            config = get_config()
             default_page = config.persist["options_last_active_page"]
         self.add_pages(None, default_page, self.ui.pages_tree)
 
         # work-around to set optimal option pane width
         self.ui.pages_tree.expandAll()
         max_page_name = self.ui.pages_tree.sizeHintForColumn(0) + 2*self.ui.pages_tree.frameWidth()
-        self.ui.splitter.setSizes([max_page_name,
-                                   self.geometry().width() - max_page_name])
+        self.ui.dialog_splitter.setSizes([max_page_name, self.geometry().width() - max_page_name])
 
         self.ui.pages_tree.setHeaderLabels([""])
         self.ui.pages_tree.header().hide()
@@ -171,15 +166,10 @@ class OptionsDialog(PicardDialog, SingletonDialog):
                 self.disable_page(page.NAME)
         self.ui.pages_tree.setCurrentItem(self.default_item)
 
-    def keyPressEvent(self, event):
-        if event.matches(QtGui.QKeySequence.HelpContents):
-            self.help()
-        else:
-            super().keyPressEvent(event)
-
     def switch_page(self):
         items = self.ui.pages_tree.selectedItems()
         if items:
+            config = get_config()
             page = self.item_to_page[items[0]]
             config.persist["options_last_active_page"] = page.NAME
             self.ui.pages_stack.setCurrentWidget(page)
@@ -188,7 +178,8 @@ class OptionsDialog(PicardDialog, SingletonDialog):
         item = self.page_to_item[name]
         item.setDisabled(True)
 
-    def help(self):
+    @property
+    def help_url(self):
         current_page = self.ui.pages_stack.currentWidget()
         url = current_page.HELP_URL
         # If URL is empty, use the first non empty parent help URL.
@@ -196,10 +187,8 @@ class OptionsDialog(PicardDialog, SingletonDialog):
             current_page = self.item_to_page[self.page_to_item[current_page.PARENT]]
             url = current_page.HELP_URL
         if not url:
-            url = DOCS_BASE_URL
-        elif url.startswith('/'):
-            url = DOCS_BASE_URL + url
-        webbrowser2.open(url)
+            url = 'doc_options'  # key in PICARD_URLS
+        return url
 
     def accept(self):
         for page in self.pages:
@@ -233,11 +222,12 @@ class OptionsDialog(PicardDialog, SingletonDialog):
             index = self.ui.pages_tree.indexFromItem(item)
             is_expanded = self.ui.pages_tree.isExpanded(index)
             expanded_pages.append((page, is_expanded))
+        config = get_config()
         config.persist["options_pages_tree_state"] = expanded_pages
-        config.persist["options_splitter"] = self.ui.splitter.saveState()
 
     @restore_method
     def restoreWindowState(self):
+        config = get_config()
         pages_tree_state = config.persist["options_pages_tree_state"]
         if not pages_tree_state:
             self.ui.pages_tree.expandAll()
@@ -248,9 +238,6 @@ class OptionsDialog(PicardDialog, SingletonDialog):
                 except KeyError:
                     continue
                 item.setExpanded(is_expanded)
-
-        self.restore_geometry()
-        self.ui.splitter.restoreState(config.persist["options_splitter"])
 
     def restore_all_defaults(self):
         for page in self.pages:

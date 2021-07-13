@@ -2,9 +2,9 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2008, 2018-2019 Philipp Wolfer
+# Copyright (C) 2008, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011, 2013 Michael Wiencek
-# Copyright (C) 2013, 2018 Laurent Monin
+# Copyright (C) 2013, 2018, 2020 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
 #
@@ -29,7 +29,7 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import config
+from picard.config import get_config
 
 
 class RatingWidget(QtWidgets.QWidget):
@@ -37,6 +37,7 @@ class RatingWidget(QtWidgets.QWidget):
     def __init__(self, parent, track):
         super().__init__(parent)
         self._track = track
+        config = get_config()
         self._maximum = config.setting["rating_steps"] - 1
         try:
             self._rating = int(track.metadata["~rating"] or 0)
@@ -97,6 +98,7 @@ class RatingWidget(QtWidgets.QWidget):
         track.metadata["~rating"] = rating
         for file in track.files:
             file.metadata["~rating"] = rating
+        config = get_config()
         if config.setting["submit_ratings"]:
             ratings = {("recording", track.id): self._rating}
             self.tagger.mb_api.submit_ratings(ratings, None)

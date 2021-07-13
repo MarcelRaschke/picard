@@ -2,9 +2,9 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019 Laurent Monin
-# Copyright (C) 2019 Philipp Wolfer
 # Copyright (C) 2019 Timur Enikeev
+# Copyright (C) 2019-2020 Laurent Monin
+# Copyright (C) 2019-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -29,10 +29,8 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 from picard.const.sys import IS_MACOS
 from picard.util import (
     format_time,
@@ -215,6 +213,7 @@ class PlayerToolbar(QtWidgets.QToolBar):
         self.progress_widget = PlaybackProgressSlider(self, self.player)
         self.addWidget(self.progress_widget)
 
+        config = get_config()
         volume = config.persist["mediaplayer_volume"]
         self.player.set_volume(volume)
         self.volume_button = VolumeControlButton(self, volume)

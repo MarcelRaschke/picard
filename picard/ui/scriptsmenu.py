@@ -2,9 +2,9 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2018 Laurent Monin
-# Copyright (C) 2018, 2020 Philipp Wolfer
 # Copyright (C) 2018 Yvan Rivière
+# Copyright (C) 2018, 2020 Laurent Monin
+# Copyright (C) 2018, 2020-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -71,7 +71,7 @@ class ScriptsMenu(QtWidgets.QMenu):
 
     def _iter_metadata_objects(self, objs):
         for obj in objs:
-            if hasattr(obj, 'metadata'):
+            if hasattr(obj, 'metadata') and not getattr(obj, 'special', False):
                 yield obj
             if isinstance(obj, Cluster) or isinstance(obj, Track):
                 yield from self._iter_metadata_objects(obj.iterfiles())

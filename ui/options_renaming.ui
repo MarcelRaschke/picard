@@ -10,7 +10,7 @@
     <x>0</x>
     <y>0</y>
     <width>453</width>
-    <height>540</height>
+    <height>650</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -118,46 +118,159 @@
     </widget>
    </item>
    <item>
-    <widget class="QLabel" name="file_naming_format_label">
+    <widget class="QLabel" name="label_2">
      <property name="text">
-      <string>Name files like this</string>
+      <string>Selected file naming script:</string>
      </property>
     </widget>
    </item>
    <item>
-    <widget class="ScriptTextEdit" name="file_naming_format">
-     <property name="enabled">
-      <bool>false</bool>
+    <layout class="QHBoxLayout" name="horizontalLayout_2">
+     <property name="spacing">
+      <number>2</number>
      </property>
+     <item>
+      <widget class="QComboBox" name="naming_script_selector">
+       <property name="sizePolicy">
+        <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+         <horstretch>0</horstretch>
+         <verstretch>0</verstretch>
+        </sizepolicy>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="open_script_editor">
+       <property name="text">
+        <string>Edit script...</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="groupBox">
      <property name="sizePolicy">
-      <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+      <sizepolicy hsizetype="Preferred" vsizetype="MinimumExpanding">
        <horstretch>0</horstretch>
        <verstretch>0</verstretch>
       </sizepolicy>
      </property>
-     <property name="minimumSize">
-      <size>
-       <width>0</width>
-       <height>0</height>
-      </size>
+     <property name="title">
+      <string>Files will be named like this:</string>
      </property>
-     <property name="cursor" stdset="0">
-      <cursorShape>IBeamCursor</cursorShape>
+     <layout class="QVBoxLayout" name="verticalLayout_6">
+      <property name="leftMargin">
+       <number>3</number>
+      </property>
+      <property name="topMargin">
+       <number>3</number>
+      </property>
+      <property name="rightMargin">
+       <number>3</number>
+      </property>
+      <property name="bottomMargin">
+       <number>3</number>
+      </property>
+      <item>
+       <widget class="QSplitter" name="renaming_options_examples_splitter">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <widget class="QFrame" name="frame">
+         <property name="minimumSize">
+          <size>
+           <width>100</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout">
+          <property name="spacing">
+           <number>3</number>
+          </property>
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="example_filename_before_label">
+            <property name="text">
+             <string>Before</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QListWidget" name="example_filename_before"/>
+          </item>
+         </layout>
+        </widget>
+        <widget class="QFrame" name="frame_2">
+         <property name="minimumSize">
+          <size>
+           <width>100</width>
+           <height>0</height>
+          </size>
+         </property>
+         <property name="frameShape">
+          <enum>QFrame::NoFrame</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_3">
+          <property name="spacing">
+           <number>3</number>
+          </property>
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="example_filename_after_label">
+            <property name="text">
+             <string>After</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QListWidget" name="example_filename_after"/>
+          </item>
+         </layout>
+        </widget>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="example_selection_note">
+     <property name="text">
+      <string/>
      </property>
-     <property name="tabChangesFocus">
-      <bool>false</bool>
-     </property>
-     <property name="lineWrapMode">
-      <enum>QTextEdit::NoWrap</enum>
-     </property>
-     <property name="tabStopWidth">
-      <number>20</number>
-     </property>
-     <property name="acceptRichText">
-      <bool>false</bool>
-     </property>
-     <property name="textInteractionFlags">
-      <set>Qt::TextEditorInteraction</set>
+     <property name="wordWrap">
+      <bool>true</bool>
      </property>
     </widget>
    </item>
@@ -167,111 +280,29 @@
       <number>2</number>
      </property>
      <item>
-      <widget class="QLabel" name="renaming_error">
+      <widget class="QPushButton" name="example_filename_sample_files_button">
        <property name="text">
-        <string/>
-       </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
+        <string>Reload examples</string>
        </property>
       </widget>
      </item>
      <item>
-      <widget class="QPushButton" name="file_naming_format_default">
-       <property name="sizePolicy">
-        <sizepolicy hsizetype="Fixed" vsizetype="Fixed">
-         <horstretch>0</horstretch>
-         <verstretch>0</verstretch>
-        </sizepolicy>
+      <spacer name="horizontalSpacer_2">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
        </property>
-       <property name="minimumSize">
+       <property name="sizeHint" stdset="0">
         <size>
-         <width>0</width>
-         <height>0</height>
+         <width>40</width>
+         <height>20</height>
         </size>
        </property>
-       <property name="text">
-        <string>Default</string>
-       </property>
-      </widget>
+      </spacer>
      </item>
     </layout>
    </item>
-   <item>
-    <widget class="QLabel" name="file_naming_format_documentation">
-     <property name="text">
-      <string/>
-     </property>
-     <property name="textFormat">
-      <enum>Qt::RichText</enum>
-     </property>
-     <property name="wordWrap">
-      <bool>true</bool>
-     </property>
-     <property name="openExternalLinks">
-      <bool>true</bool>
-     </property>
-    </widget>
-   </item>
-   <item>
-    <widget class="QGroupBox" name="groupBox">
-     <property name="title">
-      <string>Examples</string>
-     </property>
-     <layout class="QVBoxLayout" name="verticalLayout">
-      <property name="leftMargin">
-       <number>2</number>
-      </property>
-      <property name="topMargin">
-       <number>0</number>
-      </property>
-      <property name="rightMargin">
-       <number>2</number>
-      </property>
-      <property name="bottomMargin">
-       <number>0</number>
-      </property>
-      <item>
-       <widget class="QLabel" name="example_filename">
-        <property name="text">
-         <string/>
-        </property>
-        <property name="textFormat">
-         <enum>Qt::RichText</enum>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="example_filename_va">
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-        <property name="text">
-         <string/>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-     </layout>
-    </widget>
-   </item>
   </layout>
  </widget>
- <customwidgets>
-  <customwidget>
-   <class>ScriptTextEdit</class>
-   <extends>QTextEdit</extends>
-   <header location="global">picard.ui.widgets.scripttextedit</header>
-  </customwidget>
- </customwidgets>
  <tabstops>
   <tabstop>move_files</tabstop>
   <tabstop>move_files_to</tabstop>
@@ -279,7 +310,6 @@
   <tabstop>move_additional_files</tabstop>
   <tabstop>move_additional_files_pattern</tabstop>
   <tabstop>delete_empty_dirs</tabstop>
-  <tabstop>file_naming_format_default</tabstop>
  </tabstops>
  <resources/>
  <connections/>

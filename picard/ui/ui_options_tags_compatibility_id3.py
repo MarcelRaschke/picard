@@ -107,7 +107,8 @@ class Ui_TagsCompatibilityOptionsPage(object):
         TagsCompatibilityOptionsPage.setTabOrder(self.enc_utf8, self.enc_utf16)
         TagsCompatibilityOptionsPage.setTabOrder(self.enc_utf16, self.enc_iso88591)
         TagsCompatibilityOptionsPage.setTabOrder(self.enc_iso88591, self.id3v23_join_with)
-        TagsCompatibilityOptionsPage.setTabOrder(self.id3v23_join_with, self.write_id3v1)
+        TagsCompatibilityOptionsPage.setTabOrder(self.id3v23_join_with, self.itunes_compatible_grouping)
+        TagsCompatibilityOptionsPage.setTabOrder(self.itunes_compatible_grouping, self.write_id3v1)
 
     def retranslateUi(self, TagsCompatibilityOptionsPage):
         _translate = QtCore.QCoreApplication.translate
@@ -115,7 +116,7 @@ class Ui_TagsCompatibilityOptionsPage(object):
         self.id3v2_version.setTitle(_("ID3v2 Version"))
         self.write_id3v24.setText(_("2.4"))
         self.write_id3v23.setText(_("2.3"))
-        self.id3v2_text_encoding.setTitle(_("ID3v2 Text Encoding"))
+        self.id3v2_text_encoding.setTitle(_("ID3v2 text encoding"))
         self.enc_utf8.setText(_("UTF-8"))
         self.enc_utf16.setText(_("UTF-16"))
         self.enc_iso88591.setText(_("ISO-8859-1"))

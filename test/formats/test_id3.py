@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019 Laurent Monin
-# Copyright (C) 2019-2020 Philipp Wolfer
+# Copyright (C) 2019-2021 Philipp Wolfer
 # Copyright (C) 2019 Zenara Daley
 #
 # This program is free software; you can redistribute it and/or
@@ -454,6 +454,68 @@ class CommonId3Tests:
             self.assertIn('http://example.com/1', loaded_licenses)
             self.assertIn('http://example.com/2', loaded_licenses)
 
+        @skipUnlessTestfile
+        def test_license_upgrade_wcop(self):
+            tags = mutagen.id3.ID3Tags()
+            tags.add(mutagen.id3.WCOP(url='http://example.com/1'))
+            save_raw(self.filename, tags)
+            metadata = load_metadata(self.filename)
+            self.assertEqual('http://example.com/1', metadata['license'])
+            metadata.add('license', 'http://example.com/2')
+            save_metadata(self.filename, metadata)
+            raw_metadata = load_raw(self.filename)
+            self.assertNotIn('WCOP', raw_metadata)
+            loaded_licenses = [url for url in raw_metadata['TXXX:LICENSE']]
+            self.assertEqual(['http://example.com/1', 'http://example.com/2'], loaded_licenses)
+
+        @skipUnlessTestfile
+        def test_license_downgrade_wcop(self):
+            tags = mutagen.id3.ID3Tags()
+            licenses = ['http://example.com/1', 'http://example.com/2']
+            tags.add(mutagen.id3.TXXX(desc='LICENSE', text=licenses))
+            save_raw(self.filename, tags)
+            raw_metadata = load_raw(self.filename)
+            metadata = load_metadata(self.filename)
+            self.assertEqual(licenses, metadata.getall('license'))
+            metadata['license'] = 'http://example.com/1'
+            save_metadata(self.filename, metadata)
+            raw_metadata = load_raw(self.filename)
+            self.assertEqual('http://example.com/1', raw_metadata['WCOP'])
+            self.assertNotIn('TXXX:LICENSE', raw_metadata)
+
+        @skipUnlessTestfile
+        def test_license_delete(self):
+            tags = mutagen.id3.ID3Tags()
+            tags.add(mutagen.id3.WCOP(url='http://example.com/1'))
+            tags.add(mutagen.id3.TXXX(desc='LICENSE', text='http://example.com/2'))
+            save_raw(self.filename, tags)
+            metadata = load_metadata(self.filename)
+            del metadata['license']
+            loaded_metadata = save_and_load_metadata(self.filename, metadata)
+            self.assertNotIn('license', loaded_metadata)
+
+        @skipUnlessTestfile
+        def test_woar_not_duplicated(self):
+            metadata = Metadata({
+                'website': 'http://example.com/1'
+            })
+            loaded_metadata = save_and_load_metadata(self.filename, metadata)
+            self.assertEqual(metadata['website'], loaded_metadata['website'])
+            metadata['website'] = 'http://example.com/2'
+            loaded_metadata = save_and_load_metadata(self.filename, metadata)
+            self.assertEqual(metadata['website'], loaded_metadata['website'])
+
+        @skipUnlessTestfile
+        def test_woar_delete(self):
+            metadata = Metadata({
+                'website': 'http://example.com/1'
+            })
+            loaded_metadata = save_and_load_metadata(self.filename, metadata)
+            self.assertEqual(metadata['website'], loaded_metadata['website'])
+            del metadata['website']
+            loaded_metadata = save_and_load_metadata(self.filename, metadata)
+            self.assertNotIn('website', loaded_metadata)
+
 
 class MP3Test(CommonId3Tests.Id3TestCase):
     testfile = 'test.mp3'
@@ -576,3 +638,41 @@ class Id3UtilTest(PicardTestCase):
 
 class Mp3CoverArtTest(CommonCoverArtTests.CoverArtTestCase):
     testfile = 'test.mp3'
+
+
+class ID3FileTest(PicardTestCase):
+
+    def setUp(self):
+        super().setUp()
+        self.file = id3.ID3File('somepath/somefile.mp3')
+        config.setting['write_id3v23'] = False
+        config.setting['id3v23_join_with'] = ' / '
+        self.file.metadata['artist'] = ['foo', 'bar']
+        self.file.metadata['originaldate'] = '2020-04-01'
+        self.file.metadata['date'] = '2021-04-01'
+
+    def test_format_specific_metadata_v24(self):
+        metadata = self.file.metadata
+        for name, values in metadata.rawitems():
+            self.assertEqual(values, self.file.format_specific_metadata(metadata, name))
+
+    def test_format_specific_metadata_v23(self):
+        config.setting['write_id3v23'] = True
+        metadata = self.file.metadata
+        self.assertEqual(['foo / bar'], self.file.format_specific_metadata(metadata, 'artist'))
+        self.assertEqual(['2020'], self.file.format_specific_metadata(metadata, 'originaldate'))
+        self.assertEqual(['2021-04-01'], self.file.format_specific_metadata(metadata, 'date'))
+
+    def test_format_specific_metadata_v23_incomplete_date(self):
+        config.setting['write_id3v23'] = True
+        metadata = self.file.metadata
+        metadata['date'] = '2021-04'
+        self.assertEqual(['2021'], self.file.format_specific_metadata(metadata, 'date'))
+
+    def test_format_specific_metadata_override_settings(self):
+        settings = {
+            'write_id3v23': True,
+            'id3v23_join_with': '; ',
+        }
+        metadata = self.file.metadata
+        self.assertEqual(['foo; bar'], self.file.format_specific_metadata(metadata, 'artist', settings))

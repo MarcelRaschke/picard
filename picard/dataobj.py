@@ -5,11 +5,11 @@
 # Copyright (C) 2004 Robert Kaye
 # Copyright (C) 2006-2008 Lukáš Lalinský
 # Copyright (C) 2011-2012 Michael Wiencek
-# Copyright (C) 2013 Laurent Monin
+# Copyright (C) 2013, 2020 Laurent Monin
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2017 Sophist-UK
-# Copyright (C) 2018 Philipp Wolfer
 # Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2018, 2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -26,7 +26,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard import config
+from picard.config import get_config
 from picard.util import LockableObject
 
 
@@ -44,6 +44,7 @@ class DataObject(LockableObject):
     @staticmethod
     def set_genre_inc_params(inc):
         require_authentication = False
+        config = get_config()
         if config.setting['use_genres']:
             use_folksonomy = config.setting['folksonomy_tags']
             if config.setting['only_my_genres']:

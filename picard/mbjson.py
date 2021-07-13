@@ -4,9 +4,11 @@
 #
 # Copyright (C) 2017 David Mandelberg
 # Copyright (C) 2017-2018 Sambhav Kothari
-# Copyright (C) 2017-2019 Laurent Monin
-# Copyright (C) 2018-2020 Philipp Wolfer
+# Copyright (C) 2017-2020 Laurent Monin
+# Copyright (C) 2018-2021 Philipp Wolfer
 # Copyright (C) 2019 Michael Wiencek
+# Copyright (C) 2020 David Kellner
+# Copyright (C) 2020 dukeyin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -23,7 +25,7 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
-from picard import config
+from picard.config import get_config
 from picard.const import RELEASE_FORMATS
 from picard.util import (
     format_time,
@@ -54,6 +56,7 @@ _artist_rel_types = {
     # "recording": "engineer",
     "remixer": "remixer",
     "sound": "engineer",
+    "video director": "director",
     "vocal arranger": "arranger",
     "writer": "writer",
 }
@@ -73,10 +76,12 @@ _MEDIUM_TO_METADATA = {
 
 _RECORDING_TO_METADATA = {
     'disambiguation': '~recordingcomment',
+    'first-release-date': '~recording_firstreleasedate',
     'title': 'title',
 }
 
 _RELEASE_TO_METADATA = {
+    'annotation': '~releaseannotation',
     'asin': 'asin',
     'barcode': 'barcode',
     'country': 'releasecountry',
@@ -93,7 +98,7 @@ _ARTIST_TO_METADATA = {
 
 _RELEASE_GROUP_TO_METADATA = {
     'disambiguation': '~releasegroupcomment',
-    'first-release-date': 'originaldate',
+    'first-release-date': '~releasegroup_firstreleasedate',
     'title': '~releasegroup',
 }
 
@@ -130,6 +135,7 @@ def _parse_attributes(attrs, reltype, attr_credits):
 
 
 def _relations_to_metadata(relations, m):
+    config = get_config()
     use_credited_as = not config.setting['standardize_artists']
     use_instrument_credits = not config.setting['standardize_instruments']
     for relation in relations:
@@ -181,6 +187,7 @@ def _relations_to_metadata(relations, m):
 
 
 def _translate_artist_node(node):
+    config = get_config()
     transl, translsort = None, None
     if config.setting['translate_artist_names']:
         locale = config.setting["artist_locale"]
@@ -228,6 +235,7 @@ def artist_credit_from_node(node):
     artistsort = ""
     artists = []
     artistssort = []
+    config = get_config()
     use_credited_as = not config.setting["standardize_artists"]
     for artist_info in node:
         a = artist_info['artist']
@@ -441,6 +449,7 @@ def artist_to_metadata(node, m):
 
 def release_to_metadata(node, m, album=None):
     """Make metadata dict from a JSON 'release' node."""
+    config = get_config()
     m.add_unique('musicbrainz_albumid', node['id'])
     for key, value in node.items():
         if not value and value != 0:
@@ -490,7 +499,8 @@ def release_group_to_metadata(node, m, release_group=None):
         elif key == 'secondary-types':
             add_secondary_release_types(value, m)
     add_genres_from_node(node, release_group)
-    if m['originaldate']:
+    if m['~releasegroup_firstreleasedate']:
+        m['originaldate'] = m['~releasegroup_firstreleasedate']
         m['originalyear'] = m['originaldate'][:4]
     m['releasetype'] = m.getall('~primaryreleasetype') + m.getall('~secondaryreleasetype')
 

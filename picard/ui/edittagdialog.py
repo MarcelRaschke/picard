@@ -6,7 +6,7 @@
 # Copyright (C) 2014 Sophist-UK
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Wieland Hoffmann
-# Copyright (C) 2017-2018 Laurent Monin
+# Copyright (C) 2017-2018, 2020 Laurent Monin
 # Copyright (C) 2018 Vishal Choudhary
 # Copyright (C) 2019-2020 Philipp Wolfer
 #
@@ -91,8 +91,6 @@ class TagEditorDelegate(QtWidgets.QItemDelegate):
 
 class EditTagDialog(PicardDialog):
 
-    autorestore = False
-
     def __init__(self, window, tag):
         super().__init__(window)
         self.ui = Ui_EditTagDialog()
@@ -120,7 +118,6 @@ class EditTagDialog(PicardDialog):
         self.value_list.setItemDelegate(TagEditorDelegate(self))
         self.tag_changed(tag)
         self.value_selection_changed()
-        self.restore_geometry()
 
     def keyPressEvent(self, event):
         if event.modifiers() == QtCore.Qt.NoModifier and event.key() in (QtCore.Qt.Key_Enter, QtCore.Qt.Key_Return):
@@ -138,7 +135,11 @@ class EditTagDialog(PicardDialog):
 
     def edit_value(self):
         item = self.value_list.currentItem()
-        if item and not self.value_list.isPersistentEditorOpen(item):
+        if item:
+            # Do not initialize editing if editor is already active. Avoids flickering of the edit field
+            # when already in edit mode. `isPersistentEditorOpen` is only supported in Qt 5.10 and later.
+            if hasattr(self.value_list, 'isPersistentEditorOpen') and self.value_list.isPersistentEditorOpen(item):
+                return
             self.value_list.editItem(item)
 
     def add_value(self):

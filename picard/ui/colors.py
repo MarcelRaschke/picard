@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019-2020 Laurent Monin
-# Copyright (C) 2019-2020 Philipp Wolfer
+# Copyright (C) 2019-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -19,11 +19,12 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import defaultdict
 
 from PyQt5 import QtGui
 
-from picard import config
+from picard.config import get_config
 
 from picard.ui.theme import theme
 
@@ -123,6 +124,7 @@ class InterfaceColors:
             self.set_color(color_key, color_value)
 
     def load_from_config(self):
+        config = get_config()
         self.set_colors(config.setting[self._config_key])
 
     def get_colors(self):
@@ -154,6 +156,7 @@ class InterfaceColors:
     def save_to_config(self):
         # returns True if user has to be warned about color changes
         changed = False
+        config = get_config()
         conf = config.setting[self._config_key]
         for key, color in self._colors.items():
             if key not in conf:

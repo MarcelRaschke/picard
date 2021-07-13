@@ -3,11 +3,11 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2007, 2011 Lukáš Lalinský
-# Copyright (C) 2009-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009-2011, 2014, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011-2014 Wieland Hoffmann
 # Copyright (C) 2012-2013 Michael Wiencek
 # Copyright (C) 2013 Calvin Walton
-# Copyright (C) 2013-2014, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2020 Laurent Monin
 # Copyright (C) 2014-2015, 2017 Sophist-UK
 # Copyright (C) 2016-2018 Sambhav Kothari
 #
@@ -184,6 +184,7 @@ class ASFFile(File):
         'djmixer': 'WM/DJMixer',
         'mixer': 'WM/Mixer',
         'artists': 'WM/ARTISTS',
+        'director': 'WM/Director',
         'work': 'WM/Work',
         'website': 'WM/AuthorURL',
     }
@@ -266,7 +267,10 @@ class ASFFile(File):
         tags = file.tags
 
         if config.setting['clear_existing_tags']:
+            cover = tags['WM/Picture'] if config.setting['preserve_images'] else None
             tags.clear()
+            if cover:
+                tags['WM/Picture'] = cover
         cover = []
         for image in metadata.images.to_be_saved_to_tags():
             tag_data = pack_image(image.mimetype, image.data,

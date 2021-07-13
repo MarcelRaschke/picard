@@ -3,7 +3,7 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2019 Laurent Monin
-# Copyright (C) 2019-2020 Philipp Wolfer
+# Copyright (C) 2019-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -30,6 +30,7 @@ from picard.config import (
     Option,
     TextOption,
 )
+import picard.config_upgrade
 from picard.config_upgrade import (
     OLD_DEFAULT_FILE_NAMING_FORMAT_v1_3,
     OLD_DEFAULT_FILE_NAMING_FORMAT_v2_1,
@@ -50,6 +51,9 @@ from picard.config_upgrade import (
     upgrade_to_v2_4_0_beta_3,
     upgrade_to_v2_5_0_dev_1,
     upgrade_to_v2_5_0_dev_2,
+    upgrade_to_v2_6_0_beta_2,
+    upgrade_to_v2_6_0_beta_3,
+    upgrade_to_v2_6_0_dev_1,
 )
 from picard.const import (
     DEFAULT_FILE_NAMING_FORMAT,
@@ -289,3 +293,50 @@ class TestPicardConfigUpgrades(TestPicardConfigCommon):
         upgrade_to_v2_5_0_dev_2(self.config)
         self.assertEqual(b'', self.config.persist['splitter_state'])
         self.assertEqual(b'', self.config.persist['bottom_splitter_state'])
+
+    def test_upgrade_to_v2_6_0_dev_1(self):
+        TextOption("setting", "acoustid_fpcalc", "")
+        self.config.setting["acoustid_fpcalc"] = "/usr/bin/fpcalc"
+        upgrade_to_v2_6_0_dev_1(self.config)
+        self.assertEqual("/usr/bin/fpcalc", self.config.setting["acoustid_fpcalc"])
+
+    def test_upgrade_to_v2_6_0_dev_1_empty(self):
+        TextOption("setting", "acoustid_fpcalc", "")
+        self.config.setting["acoustid_fpcalc"] = None
+        upgrade_to_v2_6_0_dev_1(self.config)
+        self.assertEqual("", self.config.setting["acoustid_fpcalc"])
+
+    def test_upgrade_to_v2_6_0_dev_1_snap(self):
+        TextOption("setting", "acoustid_fpcalc", "")
+        self.config.setting["acoustid_fpcalc"] = "/snap/picard/221/usr/bin/fpcalc"
+        upgrade_to_v2_6_0_dev_1(self.config)
+        self.assertEqual("", self.config.setting["acoustid_fpcalc"])
+
+    def test_upgrade_to_v2_6_0_dev_1_frozen(self):
+        TextOption("setting", "acoustid_fpcalc", "")
+        self.config.setting["acoustid_fpcalc"] = r"C:\Program Files\MusicBrainz Picard\fpcalc.exe"
+        picard.config_upgrade.IS_FROZEN = True
+        upgrade_to_v2_6_0_dev_1(self.config)
+        picard.config_upgrade.IS_FROZEN = False
+        self.assertEqual("", self.config.setting["acoustid_fpcalc"])
+
+    def test_upgrade_to_v2_6_0_beta_2(self):
+        BoolOption('setting', 'image_type_as_filename', False)
+        BoolOption('setting', 'save_only_one_front_image', False)
+
+        self.config.setting['caa_image_type_as_filename'] = True
+        self.config.setting['caa_save_single_front_image'] = True
+        upgrade_to_v2_6_0_beta_2(self.config)
+        self.assertNotIn('caa_image_type_as_filename', self.config.setting)
+        self.assertTrue(self.config.setting['image_type_as_filename'])
+        self.assertNotIn('caa_save_single_front_image', self.config.setting)
+        self.assertTrue(self.config.setting['save_only_one_front_image'])
+
+    def test_upgrade_to_v2_6_0_beta_3(self):
+        from picard.ui.theme import UiTheme
+        BoolOption('setting', 'use_system_theme', False)
+        self.config.setting['use_system_theme'] = True
+        upgrade_to_v2_6_0_beta_3(self.config)
+        self.assertNotIn('use_system_theme', self.config.setting)
+        self.assertIn('ui_theme', self.config.setting)
+        self.assertEqual(str(UiTheme.SYSTEM), self.config.setting['ui_theme'])

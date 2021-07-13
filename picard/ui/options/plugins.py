@@ -4,9 +4,9 @@
 #
 # Copyright (C) 2007 Lukáš Lalinský
 # Copyright (C) 2009 Carlin Mangar
-# Copyright (C) 2009, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011-2013 Michael Wiencek
-# Copyright (C) 2013, 2015, 2018-2019 Laurent Monin
+# Copyright (C) 2013, 2015, 2018-2020 Laurent Monin
 # Copyright (C) 2013, 2017 Sophist-UK
 # Copyright (C) 2014 Shadab Zafar
 # Copyright (C) 2015, 2017 Wieland Hoffmann
@@ -41,9 +41,11 @@ from PyQt5 import (
 )
 from PyQt5.QtWidgets import QTreeWidgetItemIterator
 
-from picard import (
-    config,
-    log,
+from picard import log
+from picard.config import (
+    ListOption,
+    Option,
+    get_config,
 )
 from picard.const import (
     PLUGINS_API,
@@ -220,11 +222,10 @@ class PluginsOptionsPage(OptionsPage):
     HELP_URL = '/config/options_plugins.html'
 
     options = [
-        config.ListOption("setting", "enabled_plugins", []),
-        config.Option("persist", "plugins_list_state", QtCore.QByteArray()),
-        config.Option("persist", "plugins_list_sort_section", 0),
-        config.Option("persist", "plugins_list_sort_order",
-                      QtCore.Qt.AscendingOrder),
+        ListOption("setting", "enabled_plugins", []),
+        Option("persist", "plugins_list_state", QtCore.QByteArray()),
+        Option("persist", "plugins_list_sort_section", 0),
+        Option("persist", "plugins_list_sort_order", QtCore.Qt.AscendingOrder),
     ]
 
     def __init__(self, parent=None):
@@ -275,6 +276,7 @@ class PluginsOptionsPage(OptionsPage):
 
     def save_state(self):
         header = self.ui.plugins.header()
+        config = get_config()
         config.persist["plugins_list_state"] = header.saveState()
         config.persist["plugins_list_sort_section"] = header.sortIndicatorSection()
         config.persist["plugins_list_sort_order"] = header.sortIndicatorOrder()
@@ -287,6 +289,7 @@ class PluginsOptionsPage(OptionsPage):
 
     def restore_state(self):
         header = self.ui.plugins.header()
+        config = get_config()
         header.restoreState(config.persist["plugins_list_state"])
         idx = config.persist["plugins_list_sort_section"]
         order = config.persist["plugins_list_sort_order"]
@@ -295,6 +298,7 @@ class PluginsOptionsPage(OptionsPage):
 
     @staticmethod
     def is_plugin_enabled(plugin):
+        config = get_config()
         return bool(plugin.module_name in config.setting["enabled_plugins"])
 
     def available_plugins_name_version(self):
@@ -578,6 +582,7 @@ class PluginsOptionsPage(OptionsPage):
         return item
 
     def save(self):
+        config = get_config()
         config.setting["enabled_plugins"] = self.enabled_plugins()
         self.save_state()
 
@@ -631,7 +636,7 @@ class PluginsOptionsPage(OptionsPage):
             parse_response_type=None,
             priority=True,
             important=True,
-            queryargs={"id": plugin.module_name}
+            queryargs={"id": plugin.module_name, "version": plugin.version.to_string(short=True)}
         )
 
     def download_handler(self, update, response, reply, error, plugin):

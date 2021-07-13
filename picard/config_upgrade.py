@@ -3,12 +3,13 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2013-2014 Michael Wiencek
-# Copyright (C) 2013-2016, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2016, 2018-2020 Laurent Monin
 # Copyright (C) 2014, 2017 Lukáš Lalinský
-# Copyright (C) 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2014, 2018-2021 Philipp Wolfer
 # Copyright (C) 2015 Ohm Patel
 # Copyright (C) 2016 Suhas
 # Copyright (C) 2016-2017 Sambhav Kothari
+# Copyright (C) 2021 Gabriel Ferreira
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -33,12 +34,15 @@ from picard import log
 from picard.config import (
     BoolOption,
     IntOption,
+    ListOption,
+    Option,
     TextOption,
 )
 from picard.const import (
     DEFAULT_FILE_NAMING_FORMAT,
     DEFAULT_NUMBERED_SCRIPT_NAME,
 )
+from picard.const.sys import IS_FROZEN
 
 
 # TO ADD AN UPGRADE HOOK:
@@ -318,11 +322,120 @@ def upgrade_to_v2_5_0_dev_2(config):
     config.persist["bottom_splitter_state"] = b''
 
 
+def upgrade_to_v2_6_0_dev_1(config):
+    """Unset fpcalc path in environments where auto detection is preferred."""
+    if IS_FROZEN or config.setting['acoustid_fpcalc'].startswith('/snap/picard/'):
+        config.setting['acoustid_fpcalc'] = ''
+
+
+def upgrade_to_v2_6_0_beta_2(config):
+    """Rename caa_image_type_as_filename and caa_save_single_front_image options"""
+    rename_option(config, "caa_image_type_as_filename", "image_type_as_filename", BoolOption, False)
+    rename_option(config, "caa_save_single_front_image", "save_only_one_front_image", BoolOption, False)
+
+
+def upgrade_to_v2_6_0_beta_3(config):
+    """Replace use_system_theme with ui_theme options"""
+    from picard.ui.theme import UiTheme
+    _s = config.setting
+    TextOption("setting", "ui_theme", str(UiTheme.DEFAULT))
+    if _s["use_system_theme"]:
+        _s["ui_theme"] = str(UiTheme.SYSTEM)
+    _s.remove("use_system_theme")
+
+
+def upgrade_to_v2_7_0_dev_2(config):
+    """Replace manually set persistent splitter settings with automated system.
+    """
+    def upgrade_persisted_splitter(new_persist_key, key_map):
+        _p = config.persist
+        splitter_dict = {}
+        for (old_splitter_key, new_splitter_key) in key_map:
+            if _p.__contains__(old_splitter_key):
+                if _p[old_splitter_key] is not None:
+                    splitter_dict[new_splitter_key] = bytearray(_p[old_splitter_key])
+                _p.remove(old_splitter_key)
+        Option("persist", new_persist_key, {})
+        _p[new_persist_key] = splitter_dict
+
+    # MainWindow splitters
+    upgrade_persisted_splitter(
+        new_persist_key="splitters_MainWindow",
+        key_map=[
+            ('bottom_splitter_state', 'main_window_bottom_splitter'),
+            ('splitter_state', 'main_panel_splitter'),
+        ]
+    )
+
+    # ScriptEditorDialog splitters
+    upgrade_persisted_splitter(
+        new_persist_key="splitters_ScriptEditorDialog",
+        key_map=[
+            ('script_editor_splitter_samples', 'splitter_between_editor_and_examples'),
+            ('script_editor_splitter_samples_before_after', 'splitter_between_before_and_after'),
+            ('script_editor_splitter_documentation', 'splitter_between_editor_and_documentation'),
+        ]
+    )
+
+    # OptionsDialog splitters
+    upgrade_persisted_splitter(
+        new_persist_key="splitters_OptionsDialog",
+        key_map=[
+            ('options_splitter', 'dialog_splitter'),
+            ('scripting_splitter', 'scripting_options_splitter'),
+        ]
+    )
+
+
+def upgrade_to_v2_7_0_dev_3(config):
+    """Save file naming scripts to dictionary.
+    """
+    from picard.script import get_file_naming_script_presets
+    from picard.script.serializer import (
+        FileNamingScript,
+        ScriptImportError,
+    )
+    Option("setting", "file_renaming_scripts", {})
+    ListOption("setting", "file_naming_scripts", [])
+    TextOption("setting", "file_naming_format", DEFAULT_FILE_NAMING_FORMAT)
+    TextOption("setting", "selected_file_naming_script_id", "")
+    scripts = {}
+    for item in config.setting["file_naming_scripts"]:
+        try:
+            script_item = FileNamingScript().create_from_yaml(item, create_new_id=False)
+            scripts[script_item["id"]] = script_item.to_dict()
+        except ScriptImportError:
+            log.error("Error converting file naming script")
+    script_list = set(scripts.keys()) | set(map(lambda item: item["id"], get_file_naming_script_presets()))
+    if config.setting["selected_file_naming_script_id"] not in script_list:
+        script_item = FileNamingScript(
+            script=config.setting["file_naming_format"],
+            title=_("Primary file naming script"),
+            readonly=False,
+            deletable=True,
+        )
+        scripts[script_item["id"]] = script_item.to_dict()
+        config.setting["selected_file_naming_script_id"] = script_item["id"]
+    config.setting["file_renaming_scripts"] = scripts
+    config.setting.remove("file_naming_scripts")
+    config.setting.remove("file_naming_format")
+
+
 def rename_option(config, old_opt, new_opt, option_type, default):
     _s = config.setting
     if old_opt in _s:
         _s[new_opt] = _s.value(old_opt, option_type, default)
         _s.remove(old_opt)
+
+        _p = config.profiles
+        _s.init_profile_options()
+        all_settings = _p["user_profile_settings"]
+        for profile in _p["user_profiles"]:
+            id = profile["id"]
+            if id in all_settings and old_opt in all_settings[id]:
+                all_settings[id][new_opt] = all_settings[id][old_opt]
+                all_settings[id].pop(old_opt)
+        _p["user_profile_settings"] = all_settings
 
 
 def upgrade_config(config):
@@ -344,4 +457,9 @@ def upgrade_config(config):
     cfg.register_upgrade_hook(upgrade_to_v2_4_0_beta_3)
     cfg.register_upgrade_hook(upgrade_to_v2_5_0_dev_1)
     cfg.register_upgrade_hook(upgrade_to_v2_5_0_dev_2)
+    cfg.register_upgrade_hook(upgrade_to_v2_6_0_dev_1)
+    cfg.register_upgrade_hook(upgrade_to_v2_6_0_beta_2)
+    cfg.register_upgrade_hook(upgrade_to_v2_6_0_beta_3)
+    cfg.register_upgrade_hook(upgrade_to_v2_7_0_dev_2)
+    cfg.register_upgrade_hook(upgrade_to_v2_7_0_dev_3)
     cfg.run_upgrade_hooks(log.debug)

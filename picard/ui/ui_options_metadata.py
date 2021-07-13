@@ -3,7 +3,9 @@
 # Automatically generated - don't edit.
 # Use `python setup.py build_ui` to update it.
 
+
 from PyQt5 import QtCore, QtGui, QtWidgets
+
 
 class Ui_MetadataOptionsPage(object):
     def setupUi(self, MetadataOptionsPage):
@@ -43,6 +45,9 @@ class Ui_MetadataOptionsPage(object):
         self.track_ars = QtWidgets.QCheckBox(self.metadata_groupbox)
         self.track_ars.setObjectName("track_ars")
         self.verticalLayout_3.addWidget(self.track_ars)
+        self.guess_tracknumber_and_title = QtWidgets.QCheckBox(self.metadata_groupbox)
+        self.guess_tracknumber_and_title.setObjectName("guess_tracknumber_and_title")
+        self.verticalLayout_3.addWidget(self.guess_tracknumber_and_title)
         self.verticalLayout.addWidget(self.metadata_groupbox)
         self.custom_fields_groupbox = QtWidgets.QGroupBox(MetadataOptionsPage)
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Maximum)
@@ -83,10 +88,12 @@ class Ui_MetadataOptionsPage(object):
         QtCore.QMetaObject.connectSlotsByName(MetadataOptionsPage)
         MetadataOptionsPage.setTabOrder(self.translate_artist_names, self.artist_locale)
         MetadataOptionsPage.setTabOrder(self.artist_locale, self.standardize_artists)
-        MetadataOptionsPage.setTabOrder(self.standardize_artists, self.convert_punctuation)
+        MetadataOptionsPage.setTabOrder(self.standardize_artists, self.standardize_instruments)
+        MetadataOptionsPage.setTabOrder(self.standardize_instruments, self.convert_punctuation)
         MetadataOptionsPage.setTabOrder(self.convert_punctuation, self.release_ars)
         MetadataOptionsPage.setTabOrder(self.release_ars, self.track_ars)
-        MetadataOptionsPage.setTabOrder(self.track_ars, self.va_name)
+        MetadataOptionsPage.setTabOrder(self.track_ars, self.guess_tracknumber_and_title)
+        MetadataOptionsPage.setTabOrder(self.guess_tracknumber_and_title, self.va_name)
         MetadataOptionsPage.setTabOrder(self.va_name, self.va_name_default)
         MetadataOptionsPage.setTabOrder(self.va_name_default, self.nat_name)
         MetadataOptionsPage.setTabOrder(self.nat_name, self.nat_name_default)
@@ -100,9 +107,9 @@ class Ui_MetadataOptionsPage(object):
         self.convert_punctuation.setText(_("Convert Unicode punctuation characters to ASCII"))
         self.release_ars.setText(_("Use release relationships"))
         self.track_ars.setText(_("Use track relationships"))
+        self.guess_tracknumber_and_title.setText(_("Guess track number and title from filename if empty"))
         self.custom_fields_groupbox.setTitle(_("Custom Fields"))
         self.label_6.setText(_("Various artists:"))
         self.label_7.setText(_("Non-album tracks:"))
         self.nat_name_default.setText(_("Default"))
         self.va_name_default.setText(_("Default"))
-

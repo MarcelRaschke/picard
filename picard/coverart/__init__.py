@@ -4,10 +4,10 @@
 #
 # Copyright (C) 2007 Oliver Charles
 # Copyright (C) 2007, 2010-2011 Lukáš Lalinský
-# Copyright (C) 2007-2011, 2019-2020 Philipp Wolfer
+# Copyright (C) 2007-2011, 2019-2021 Philipp Wolfer
 # Copyright (C) 2011 Michael Wiencek
 # Copyright (C) 2011-2012 Wieland Hoffmann
-# Copyright (C) 2013-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2020 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 #
 # This program is free software; you can redistribute it and/or
@@ -30,10 +30,8 @@ import traceback
 
 from PyQt5.QtCore import QObject
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 from picard.coverart.image import (
     CoverArtImageIdentificationError,
     CoverArtImageIOError,
@@ -59,6 +57,7 @@ class CoverArt:
 
     def retrieve(self):
         """Retrieve available cover art images for the release"""
+        config = get_config()
         if (not config.setting["save_images_to_tags"] and not
                 config.setting["save_images_to_files"]):
             log.debug("Cover art disabled by user options.")
@@ -130,6 +129,7 @@ class CoverArt:
             # album removed
             return
 
+        config = get_config()
         if (self.front_image_found
             and config.setting["save_images_to_tags"]
             and not config.setting["save_images_to_files"]
@@ -158,7 +158,7 @@ class CoverArt:
                 finally:
                     if ret != CoverArtProvider.WAIT:
                         self.next_in_queue()
-                    return
+                return
             except StopIteration:
                 # nothing more to do
                 self.album._finalize_loading(None)

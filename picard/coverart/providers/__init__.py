@@ -2,12 +2,12 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2014-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2014-2015, 2018-2020 Laurent Monin
 # Copyright (C) 2015 Rahul Raturi
 # Copyright (C) 2016 Ville Skyttä
 # Copyright (C) 2016 Wieland Hoffmann
 # Copyright (C) 2017 Sambhav Kothari
-# Copyright (C) 2019-2020 Philipp Wolfer
+# Copyright (C) 2019-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -29,10 +29,8 @@ from collections import (
     namedtuple,
 )
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 from picard.coverart.providers.caa import CoverArtProviderCaa
 from picard.coverart.providers.caa_release_group import (
     CoverArtProviderCaaReleaseGroup,
@@ -68,6 +66,7 @@ POrderTuple = namedtuple('OrderTuple', 'name position enabled')
 def cover_art_providers():
     def from_ca_providers_option():
         """Iterate through ca_providers option and yield name, position and enabled"""
+        config = get_config()
         for pos, (name, enabled) in enumerate(config.setting['ca_providers']):
             yield POrderTuple(name=name, position=pos, enabled=enabled)
 

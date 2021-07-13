@@ -4,10 +4,10 @@
 #
 # Copyright (C) 2007 Oliver Charles
 # Copyright (C) 2007, 2010-2011 Lukáš Lalinský
-# Copyright (C) 2007-2011, 2015, 2018-2019 Philipp Wolfer
+# Copyright (C) 2007-2011, 2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011 Michael Wiencek
 # Copyright (C) 2011-2012 Wieland Hoffmann
-# Copyright (C) 2013-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2021 Laurent Monin
 # Copyright (C) 2015-2016 Rahul Raturi
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
@@ -45,9 +45,12 @@ from PyQt5.QtNetwork import (
     QNetworkRequest,
 )
 
-from picard import (
-    config,
-    log,
+from picard import log
+from picard.config import (
+    BoolOption,
+    IntOption,
+    ListOption,
+    get_config,
 )
 from picard.const import (
     CAA_HOST,
@@ -65,7 +68,6 @@ from picard.coverart.utils import (
     CAA_TYPES,
     translate_caa_type,
 )
-from picard.util import webbrowser2
 
 from picard.ui import PicardDialog
 from picard.ui.ui_provider_options_caa import Ui_CaaOptions
@@ -225,6 +227,8 @@ class CAATypesSelectorDialog(PicardDialog):
         types_exclude {[string]} -- List of CAA image types to exclude (default: {None})
     """
 
+    help_url = 'doc_cover_art_types'
+
     def __init__(self, parent=None, types_include=None, types_exclude=None):
         super().__init__(parent)
         if types_include is None:
@@ -330,7 +334,7 @@ class CAATypesSelectorDialog(PicardDialog):
 
         self.buttonbox.accepted.connect(self.accept)
         self.buttonbox.rejected.connect(self.reject)
-        self.buttonbox.helpRequested.connect(self.help)
+        self.buttonbox.helpRequested.connect(self.show_help)
 
         self.set_buttons_enabled_state()
 
@@ -374,9 +378,6 @@ class CAATypesSelectorDialog(PicardDialog):
                 self.list_exclude.addItem(item)
             else:
                 self.list_ignore.addItem(item)
-
-    def help(self):
-        webbrowser2.goto('doc_cover_art_types')
 
     def get_selected_types_include(self):
         return list(self.list_include.all_items_data()) or ['front']
@@ -433,13 +434,11 @@ class ProviderOptionsCaa(ProviderOptions):
     HELP_URL = '/config/options_cover_art_archive.html'
 
     options = [
-        config.BoolOption("setting", "caa_save_single_front_image", False),
-        config.BoolOption("setting", "caa_approved_only", False),
-        config.BoolOption("setting", "caa_image_type_as_filename", False),
-        config.IntOption("setting", "caa_image_size", _CAA_IMAGE_SIZE_DEFAULT),
-        config.ListOption("setting", "caa_image_types", _CAA_IMAGE_TYPE_DEFAULT_INCLUDE),
-        config.BoolOption("setting", "caa_restrict_image_types", True),
-        config.ListOption("setting", "caa_image_types_to_omit", _CAA_IMAGE_TYPE_DEFAULT_EXCLUDE),
+        BoolOption("setting", "caa_approved_only", False),
+        IntOption("setting", "caa_image_size", _CAA_IMAGE_SIZE_DEFAULT),
+        ListOption("setting", "caa_image_types", _CAA_IMAGE_TYPE_DEFAULT_INCLUDE),
+        BoolOption("setting", "caa_restrict_image_types", True),
+        ListOption("setting", "caa_image_types_to_omit", _CAA_IMAGE_TYPE_DEFAULT_EXCLUDE),
     ]
 
     _options_ui = Ui_CaaOptions
@@ -459,15 +458,14 @@ class ProviderOptionsCaa(ProviderOptions):
         for item_id, item in _CAA_THUMBNAIL_SIZE_MAP.items():
             self.ui.cb_image_size.addItem(_(item.label), userData=item_id)
 
+        config = get_config()
         size = config.setting["caa_image_size"]
         index = self.ui.cb_image_size.findData(size)
         if index < 0:
             index = self.ui.cb_image_size.findData(_CAA_IMAGE_SIZE_DEFAULT)
         self.ui.cb_image_size.setCurrentIndex(index)
 
-        self.ui.cb_save_single_front_image.setChecked(config.setting["caa_save_single_front_image"])
         self.ui.cb_approved_only.setChecked(config.setting["caa_approved_only"])
-        self.ui.cb_type_as_filename.setChecked(config.setting["caa_image_type_as_filename"])
         self.ui.restrict_images_types.setChecked(
             config.setting["caa_restrict_image_types"])
         self.caa_image_types = config.setting["caa_image_types"]
@@ -475,14 +473,11 @@ class ProviderOptionsCaa(ProviderOptions):
         self.update_caa_types()
 
     def save(self):
+        config = get_config()
         size = self.ui.cb_image_size.currentData()
         config.setting["caa_image_size"] = size
-        config.setting["caa_save_single_front_image"] = \
-            self.ui.cb_save_single_front_image.isChecked()
         config.setting["caa_approved_only"] = \
             self.ui.cb_approved_only.isChecked()
-        config.setting["caa_image_type_as_filename"] = \
-            self.ui.cb_type_as_filename.isChecked()
         config.setting["caa_restrict_image_types"] = \
             self.ui.restrict_images_types.isChecked()
         config.setting["caa_image_types"] = self.caa_image_types
@@ -514,6 +509,7 @@ class CoverArtProviderCaa(CoverArtProvider):
 
     def __init__(self, coverart):
         super().__init__(coverart)
+        config = get_config()
         self.caa_types = list(map(str.lower, config.setting["caa_image_types"]))
         self.caa_types_to_omit = list(map(str.lower, config.setting["caa_image_types_to_omit"]))
         self.len_caa_types = len(self.caa_types)
@@ -603,6 +599,7 @@ class CoverArtProviderCaa(CoverArtProvider):
             if self.restrict_types:
                 log.debug('CAA types: included: %s, excluded: %s' % (self.caa_types, self.caa_types_to_omit,))
             try:
+                config = get_config()
                 for image in data["images"]:
                     if config.setting["caa_approved_only"] and not image["approved"]:
                         continue
@@ -658,7 +655,7 @@ class CoverArtProviderCaa(CoverArtProvider):
                             # PDFs cannot be saved to tags (as 2014/05/29)
                             coverartimage.can_be_saved_to_tags = False
                         self.queue_put(coverartimage)
-                        if config.setting["caa_save_single_front_image"] and \
+                        if config.setting["save_only_one_front_image"] and \
                                 config.setting["save_images_to_files"] and \
                                 image["front"]:
                             break

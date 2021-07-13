@@ -5,7 +5,7 @@
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2017, 2019 Laurent Monin
 # Copyright (C) 2018 Wieland Hoffmann
-# Copyright (C) 2018-2020 Philipp Wolfer
+# Copyright (C) 2018-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -54,7 +54,7 @@ settings = {
     "standardize_instruments": True,
     "release_ars": True,
     "preferred_release_countries": [],
-    "artist_locale": 'en'
+    "artist_locale": 'en',
 }
 
 
@@ -92,6 +92,8 @@ class ReleaseTest(MBJSONTest):
         self.assertEqual(m['script'], 'Latn')
         self.assertEqual(m['~albumartists'], 'Pink Floyd')
         self.assertEqual(m['~albumartists_sort'], 'Pink Floyd')
+        self.assertEqual(m['~releasecomment'], 'stereo')
+        self.assertEqual(m['~releaseannotation'], 'Original Vinyl release')
         self.assertEqual(m['~releaselanguage'], 'eng')
         self.assertEqual(m.getall('~releasecountries'), ['GB', 'NZ'])
         self.assertEqual(a.genres, {
@@ -190,6 +192,10 @@ class RecordingTest(MBJSONTest):
         self.assertEqual(m['~artists_sort'], 'Sheeran, Ed')
         self.assertEqual(m['~length'], '4:41')
         self.assertEqual(m['~recordingtitle'], 'Thinking Out Loud')
+        self.assertEqual(m['~recording_firstreleasedate'], '2014-06-20')
+        self.assertEqual(m['~video'], '')
+        self.assertNotIn('originaldate', m)
+        self.assertNotIn('originalyear', m)
         self.assertEqual(t.genres, {
             'blue-eyed soul': 1,
             'pop': 3})
@@ -218,6 +224,19 @@ class RecordingInstrumentalTest(MBJSONTest):
         self.assertIn('instrumental', m.getall('~performance_attributes'))
         self.assertEqual(m['language'], 'zxx')
         self.assertNotIn('lyricist', m)
+
+
+class RecordingVideoTest(MBJSONTest):
+
+    filename = 'recording_video.json'
+
+    def test_recording(self):
+        m = Metadata()
+        t = Track('1')
+        recording_to_metadata(self.json_doc, m, t)
+        self.assertEqual(m['director'], 'Edward 209')
+        self.assertEqual(m['producer'], 'Edward 209')
+        self.assertEqual(m['~video'], '1')
 
 
 class NullRecordingTest(MBJSONTest):
@@ -357,6 +376,7 @@ class ReleaseGroupTest(MBJSONTest):
         r = ReleaseGroup("1")
         release_group_to_metadata(self.json_doc, m, r)
         self.assertEqual(m['musicbrainz_releasegroupid'], 'f5093c06-23e3-404f-aeaa-40f72885ee3a')
+        self.assertEqual(m['~releasegroup_firstreleasedate'], '1973-03-24')
         self.assertEqual(m['originaldate'], '1973-03-24')
         self.assertEqual(m['originalyear'], '1973')
         self.assertEqual(m['releasetype'], 'album')

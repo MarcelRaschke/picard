@@ -3,12 +3,13 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2007 Lukáš Lalinský
-# Copyright (C) 2008-2009, 2019-2020 Philipp Wolfer
+# Copyright (C) 2008-2009, 2019-2021 Philipp Wolfer
 # Copyright (C) 2012-2013 Michael Wiencek
-# Copyright (C) 2013-2014, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2020 Laurent Monin
 # Copyright (C) 2014 Sophist-UK
 # Copyright (C) 2016, 2018 Sambhav Kothari
 # Copyright (C) 2018 Wieland Hoffmann
+# Copyright (C) 2021 Gabriel Ferreira
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -34,9 +35,10 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import (
-    config,
-    log,
+from picard import log
+from picard.config import (
+    IntOption,
+    get_config,
 )
 from picard.util import reconnect
 
@@ -77,6 +79,7 @@ class LogViewCommon(LogViewDialog):
         self.textCursor.movePosition(QtGui.QTextCursor.Start)
 
     def closeEvent(self, event):
+        self.save_geometry()
         event.ignore()
         self.hide()
 
@@ -155,7 +158,7 @@ class VerbosityMenu(QtWidgets.QMenu):
 class LogView(LogViewCommon):
 
     options = [
-        config.IntOption("setting", "log_verbosity", log.VERBOSITY_DEFAULT),
+        IntOption("setting", "log_verbosity", log.VERBOSITY_DEFAULT),
     ]
 
     def __init__(self, parent=None):
@@ -207,6 +210,8 @@ class LogView(LogViewCommon):
         self.save_log_as_button = QtWidgets.QPushButton(_("Save As..."))
         self.hbox.addWidget(self.save_log_as_button)
         self.save_log_as_button.clicked.connect(self._save_log_as_do)
+
+        self._prev_logitem_level = log.VERBOSITY_DEFAULT
 
     def _clear_highlight_do(self):
         self.highlight_text.setText('')
@@ -293,10 +298,10 @@ class LogView(LogViewCommon):
     def _add_entry(self, logitem):
         if not self.is_shown(logitem):
             return
-        fmt = self.textCursor.blockCharFormat()
-        self.textCursor.setBlockCharFormat(self._format(logitem.level))
+        if self._prev_logitem_level != logitem.level:
+            self.textCursor.setBlockCharFormat(self._format(logitem.level))
+            self._prev_logitem_level = logitem.level
         super()._add_entry(logitem)
-        self.textCursor.setBlockCharFormat(fmt)
 
     def _set_verbosity(self, level):
         self.verbosity = level
@@ -304,6 +309,7 @@ class LogView(LogViewCommon):
 
     def _verbosity_changed(self, level):
         if level != self.verbosity:
+            config = get_config()
             config.setting['log_verbosity'] = level
             QtCore.QObject.tagger.set_log_level(level)
             self.verbosity = level

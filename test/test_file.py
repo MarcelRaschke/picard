@@ -2,8 +2,9 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2018-2020 Philipp Wolfer
-# Copyright (C) 2019-2020 Laurent Monin
+# Copyright (C) 2018-2021 Philipp Wolfer
+# Copyright (C) 2019-2021 Laurent Monin
+# Copyright (C) 2021 Sophist-UK
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -87,6 +88,11 @@ class DataObjectTest(PicardTestCase):
         self.assertEqual(None, self.file.acoustid_fingerprint)
         self.assertEqual(0, self.file.acoustid_length)
 
+    def format_specific_metadata(self):
+        values = ['foo', 'bar']
+        self.file.metadata['test'] = values
+        self.assertEqual(values, self.file.format_specific_metadata(self.file.metadata, 'test'))
+
 
 class TestPreserveTimes(PicardTestCase):
 
@@ -166,6 +172,10 @@ class TestPreserveTimes(PicardTestCase):
             self.file._preserve_times(self.file.filename, save)
 
 
+class FakeMp3File(File):
+    EXTENSIONS = ['.mp3']
+
+
 class FileNamingTest(PicardTestCase):
 
     def setUp(self):
@@ -175,11 +185,12 @@ class FileNamingTest(PicardTestCase):
             'ascii_filenames': False,
             'clear_existing_tags': False,
             'enabled_plugins': [],
-            'file_naming_format': '%album%/%title%',
             'move_files_to': '/media/music',
             'move_files': False,
             'rename_files': False,
             'windows_compatibility': True,
+            'file_renaming_scripts': {'test_id': {'script': '%album%/%title%'}},
+            'selected_file_naming_script_id': 'test_id',
         })
         self.metadata = Metadata({
             'album': 'somealbum',
@@ -217,6 +228,30 @@ class FileNamingTest(PicardTestCase):
         self.assertEqual(
             os.path.realpath('/somepath/subdir/somealbum/somefile.mp3'),
             filename)
+
+    def test_make_filename_empty_script(self):
+        config.setting['rename_files'] = True
+        config.setting['file_renaming_scripts'] = {'test_id': {'script': '$noop()'}}
+        filename = self.file.make_filename(self.file.filename, self.metadata)
+        self.assertEqual(os.path.realpath('/somepath/somefile.mp3'), filename)
+
+    def test_make_filename_no_extension(self):
+        config.setting['rename_files'] = True
+        file_ = FakeMp3File('/somepath/_')
+        filename = file_.make_filename(file_.filename, self.metadata)
+        self.assertEqual(os.path.realpath('/somepath/sometitle.mp3'), filename)
+
+    def test_make_filename_lowercase_extension(self):
+        config.setting['rename_files'] = True
+        file_ = FakeMp3File('/somepath/somefile.MP3')
+        filename = file_.make_filename(file_.filename, self.metadata)
+        self.assertEqual(os.path.realpath('/somepath/sometitle.mp3'), filename)
+
+    def test_make_filename_scripted_extension(self):
+        config.setting['rename_files'] = True
+        config.setting['file_renaming_scripts'] = {'test_id': {'script': '$set(_extension,.foo)%title%'}}
+        filename = self.file.make_filename(self.file.filename, self.metadata)
+        self.assertEqual(os.path.realpath('/somepath/sometitle.foo'), filename)
 
     def test_make_filename_replace_trailing_dots(self):
         config.setting['rename_files'] = True
@@ -257,3 +292,50 @@ class FileNamingTest(PicardTestCase):
         self.assertEqual(
             os.path.realpath('/media/music/_somealbum/_sometitle.mp3'),
             filename)
+
+
+class FileGuessTracknumberAndTitleTest(PicardTestCase):
+    def setUp(self):
+        super().setUp()
+        self.set_config_values({
+            'guess_tracknumber_and_title': True,
+        })
+
+    def test_no_guess(self):
+        f = File('/somepath/01 somefile.mp3')
+        metadata = Metadata({
+            'album': 'somealbum',
+            'title': 'sometitle',
+            'tracknumber': '2',
+        })
+        f._guess_tracknumber_and_title(metadata)
+        self.assertEqual(metadata['tracknumber'], '2')
+        self.assertEqual(metadata['title'], 'sometitle')
+
+    def test_guess_title(self):
+        f = File('/somepath/01 somefile.mp3')
+        metadata = Metadata({
+            'album': 'somealbum',
+            'tracknumber': '2',
+        })
+        f._guess_tracknumber_and_title(metadata)
+        self.assertEqual(metadata['tracknumber'], '2')
+        self.assertEqual(metadata['title'], 'somefile')
+
+    def test_guess_tracknumber(self):
+        f = File('/somepath/01 somefile.mp3')
+        metadata = Metadata({
+            'album': 'somealbum',
+            'title': 'sometitle',
+        })
+        f._guess_tracknumber_and_title(metadata)
+        self.assertEqual(metadata['tracknumber'], '1')
+
+    def test_guess_title_tracknumber(self):
+        f = File('/somepath/01 somefile.mp3')
+        metadata = Metadata({
+            'album': 'somealbum',
+        })
+        f._guess_tracknumber_and_title(metadata)
+        self.assertEqual(metadata['tracknumber'], '1')
+        self.assertEqual(metadata['title'], 'somefile')

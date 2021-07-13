@@ -3,11 +3,12 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2007 Lukáš Lalinský
-# Copyright (C) 2010, 2018, 2020 Philipp Wolfer
+# Copyright (C) 2010, 2018, 2020-2021 Philipp Wolfer
 # Copyright (C) 2011-2012 Michael Wiencek
 # Copyright (C) 2012 Chad Wilson
-# Copyright (C) 2013 Laurent Monin
+# Copyright (C) 2013, 2020-2021 Laurent Monin
 # Copyright (C) 2014 Sophist-UK
+# Copyright (C) 2021 Petit Minion
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -22,6 +23,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from picard import log
 from picard.util.imagelist import update_metadata_images
@@ -54,6 +56,10 @@ class Item(object):
         return False
 
     def can_view_info(self):
+        return False
+
+    def can_submit(self):
+        """Return True if this object can be submitted to MusicBrainz.org."""
         return False
 
     @property
@@ -98,6 +104,39 @@ class Item(object):
 
     def clear_errors(self):
         self._errors = []
+
+    @property
+    def _images(self):
+        return self.metadata.images
+
+    def cover_art_description(self):
+        """Return the number of cover art images for display in the UI
+
+        Returns:
+            A string with the cover art image count, or empty string if not applicable
+        """
+        if not self.can_show_coverart:
+            return ''
+
+        return str(len(self._images))
+
+    def cover_art_description_detailed(self):
+        """Return  a detailed text about the images and whether they are the same across
+           all tracks for images in `images` for display in the UI
+
+        Returns:
+            A string explaining the cover art image count.
+        """
+        if not self.can_show_coverart:
+            return ''
+
+        number_of_images = len(self._images)
+        if getattr(self, 'has_common_images', True):
+            return ngettext("%i image", "%i images",
+                            number_of_images) % number_of_images
+        else:
+            return ngettext("%i image not in all tracks", "%i different images among tracks",
+                            number_of_images) % number_of_images
 
 
 class FileListItem(Item):

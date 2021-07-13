@@ -5,9 +5,9 @@
 # Copyright (C) 2013 Michael Wiencek
 # Copyright (C) 2014 Lukáš Lalinský
 # Copyright (C) 2014, 2017 Sophist-UK
-# Copyright (C) 2014, 2017-2019 Laurent Monin
+# Copyright (C) 2014, 2017-2020 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
-# Copyright (C) 2019 Philipp Wolfer
+# Copyright (C) 2019, 2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,10 +28,8 @@ from functools import partial
 
 from PyQt5 import QtCore
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 
 
 user_collections = {}
@@ -156,6 +154,7 @@ def add_release_to_user_collections(release_node):
     # Check for empy collection list
     if "collections" in release_node:
         release_id = release_node['id']
+        config = get_config()
         username = config.persist["oauth_username"].lower()
         for node in release_node['collections']:
             if node['editor'].lower() == username:

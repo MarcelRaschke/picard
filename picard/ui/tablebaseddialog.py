@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 #
 # Picard, the next-generation MusicBrainz tagger
+#
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2018 Laurent Monin
-# Copyright (C) 2019 Philipp Wolfer
+# Copyright (C) 2019, 2021 Philipp Wolfer
 # Copyright (C) 2020 Ray Bouchard
 #
 # This program is free software; you can redistribute it and/or
@@ -20,6 +21,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 """
 This can be used for basic dialogs that mostly contain a table as its core feature
 """
@@ -33,10 +35,8 @@ from PyQt5 import (
 )
 from PyQt5.QtCore import pyqtSignal
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 from picard.util import (
     natsort,
     restore_method,
@@ -85,13 +85,11 @@ class SortableTableWidgetItem(QtWidgets.QTableWidgetItem):
 class TableBasedDialog(PicardDialog):
 
     defaultsize = QtCore.QSize(720, 360)
-    autorestore = False
     scrolled = pyqtSignal()
 
     def __init__(self, parent):
         super().__init__(parent)
         self.setupUi()
-        self.restore_state()
         self.columns = None  # self.columns has to be an ordered dict, with column name as keys, and matching label as values
         self.sorting_enabled = True
         self.create_table()
@@ -193,12 +191,9 @@ class TableBasedDialog(PicardDialog):
         super().accept()
 
     @restore_method
-    def restore_state(self):
-        self.restore_geometry()
-
-    @restore_method
     def restore_table_header_state(self):
         header = self.table.horizontalHeader()
+        config = get_config()
         state = config.persist[self.dialog_header_state]
         if state:
             header.restoreState(state)
@@ -211,5 +206,6 @@ class TableBasedDialog(PicardDialog):
 
     def save_table_header_state(self):
         state = self.table.horizontalHeader().saveState()
+        config = get_config()
         config.persist[self.dialog_header_state] = state
         log.debug("save_state: %s", self.dialog_header_state)

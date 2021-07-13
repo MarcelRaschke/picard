@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2006-2009, 2012 Lukáš Lalinský
 # Copyright (C) 2007 Javier Kohen
-# Copyright (C) 2008-2011, 2014-2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2011, 2014-2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2009 Nikolai Prokoschenko
 # Copyright (C) 2011-2012 Michael Wiencek
@@ -18,7 +18,7 @@
 # Copyright (C) 2017-2018 Antonio Larrosa
 # Copyright (C) 2018 Calvin Walton
 # Copyright (C) 2018 virusMac
-# Copyright (C) 2020 Bob Swift
+# Copyright (C) 2020-2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -35,7 +35,9 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 
+from picard import log
 from picard.config import get_config
+from picard.const import DEFAULT_FILE_NAMING_FORMAT
 from picard.script.functions import (  # noqa: F401 # pylint: disable=unused-import
     register_script_function,
     script_function,
@@ -51,9 +53,11 @@ from picard.script.parser import (  # noqa: F401 # pylint: disable=unused-import
     ScriptRuntimeError,
     ScriptSyntaxError,
     ScriptText,
+    ScriptUnicodeError,
     ScriptUnknownFunction,
     ScriptVariable,
 )
+from picard.script.serializer import FileNamingScript
 
 
 class ScriptFunctionDocError(Exception):
@@ -77,8 +81,7 @@ def script_function_documentation(name, fmt, functions=None, postprocessor=None)
 def script_function_names(functions=None):
     if functions is None:
         functions = dict(ScriptParser._function_registry)
-    for name in sorted(functions):
-        yield name
+    yield from sorted(functions)
 
 
 def script_function_documentation_all(fmt='markdown', pre='',
@@ -101,3 +104,88 @@ def enabled_tagger_scripts_texts():
     if not config.setting["enable_tagger_scripts"]:
         return []
     return [(s_name, s_text) for _s_pos, s_name, s_enabled, s_text in config.setting["list_of_scripts"] if s_enabled and s_text]
+
+
+def get_file_naming_script(settings):
+    """Retrieve the file naming script.
+
+    Args:
+        settings (ConfigSection): Object containing the user settings
+
+    Returns:
+        str: The text of the file naming script if available, otherwise None
+    """
+    from picard.script import get_file_naming_script_presets
+    scripts = settings["file_renaming_scripts"]
+    selected_id = settings["selected_file_naming_script_id"]
+    if selected_id:
+        if scripts and selected_id in scripts:
+            return scripts[selected_id]["script"]
+        for item in get_file_naming_script_presets():
+            if item["id"] == selected_id:
+                return str(item["script"])
+    log.error("Unable to retrieve the file naming script '%s'", selected_id)
+    return None
+
+
+def get_file_naming_script_presets():
+    """Generator of preset example file naming script objects.
+
+    Yields:
+        FileNamingScript: the next example FileNamingScript object
+    """
+    AUTHOR = "MusicBrainz Picard Development Team"
+    DESCRIPTION = _("This preset example file naming script does not require any special settings, tagging scripts or plugins.")
+    LICENSE = "GNU Public License version 2"
+
+    def preset_title(number, title):
+        return _("Preset %d: %s") % (number, _(title))
+
+    yield FileNamingScript(
+        id="Preset 1",
+        title=preset_title(1, N_("Default file naming script")),
+        script=DEFAULT_FILE_NAMING_FORMAT,
+        readonly=True,
+        deletable=False,
+        author=AUTHOR,
+        description=DESCRIPTION,
+        version="1.0",
+        license=LICENSE,
+        last_updated="2019-08-05 13:40:00 UTC",
+        script_language_version="1.0",
+    )
+
+    yield FileNamingScript(
+        id="Preset 2",
+        title=preset_title(2, N_("[album artist]/[album]/[track #]. [title]")),
+        script="%albumartist%/\n"
+               "%album%/\n"
+               "%tracknumber%. %title%",
+        readonly=True,
+        deletable=False,
+        author=AUTHOR,
+        description=DESCRIPTION,
+        version="1.0",
+        license=LICENSE,
+        last_updated="2021-04-12 21:30:00 UTC",
+        script_language_version="1.0",
+    )
+
+    yield FileNamingScript(
+        id="Preset 3",
+        title=preset_title(3, N_("[album artist]/[album]/[disc and track #] [artist] - [title]")),
+        script="$if2(%albumartist%,%artist%)/\n"
+               "$if(%albumartist%,%album%/,)\n"
+               "$if($gt(%totaldiscs%,1),%discnumber%-,)\n"
+               "$if($and(%albumartist%,%tracknumber%),$num(%tracknumber%,2) ,)\n"
+               "$if(%_multiartist%,%artist% - ,)\n"
+               "%title%",
+        readonly=True,
+        deletable=False,
+        author=AUTHOR,
+        description=DESCRIPTION,
+        version="1.0",
+        license=LICENSE,
+        last_updated="2021-04-12 21:30:00 UTC",
+        script_language_version="1.0",
+    )

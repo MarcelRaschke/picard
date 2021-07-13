@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2016 Rahul Raturi
-# Copyright (C) 2018-2019 Laurent Monin
-# Copyright (C) 2018-2020 Philipp Wolfer
+# Copyright (C) 2018-2020 Laurent Monin
+# Copyright (C) 2018-2021 Philipp Wolfer
 # Copyright (C) 2020 Ray Bouchard
 #
 # This program is free software; you can redistribute it and/or
@@ -21,6 +21,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from collections import namedtuple
 
 from PyQt5 import (
@@ -30,7 +31,7 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import config
+from picard.config import get_config
 from picard.util import (
     icontheme,
     restore_method,
@@ -48,6 +49,7 @@ class SearchBox(QtWidgets.QWidget):
         self.search_action.setEnabled(False)
         self.search_action.triggered.connect(self.search)
         if force_advanced_search is None:
+            config = get_config()
             self.force_advanced_search = False
             self.use_advanced_search = config.setting["use_adv_search_syntax"]
         else:
@@ -114,6 +116,7 @@ class SearchBox(QtWidgets.QWidget):
     def update_advanced_syntax_setting(self):
         self.use_advanced_search = self.use_adv_search_syntax.isChecked()
         if not self.force_advanced_search:
+            config = get_config()
             config.setting["use_adv_search_syntax"] = self.use_advanced_search
 
     def enable_search(self):
@@ -157,6 +160,7 @@ class SearchDialog(TableBasedDialog):
         elif self.force_advanced_search is not None:
             return self.force_advanced_search
         else:
+            config = get_config()
             return config.setting["use_adv_search_syntax"]
 
     def get_value_for_row_id(self, row, value):

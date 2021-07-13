@@ -7,14 +7,14 @@
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2008 Robert Kaye
 # Copyright (C) 2008 Will
-# Copyright (C) 2008-2010, 2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2010, 2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2009 David Hilton
 # Copyright (C) 2011-2012 Chad Wilson
 # Copyright (C) 2011-2013, 2015-2017 Wieland Hoffmann
 # Copyright (C) 2011-2014 Michael Wiencek
 # Copyright (C) 2013-2014, 2017 Sophist-UK
-# Copyright (C) 2013-2020 Laurent Monin
+# Copyright (C) 2013-2021 Laurent Monin
 # Copyright (C) 2015 Ohm Patel
 # Copyright (C) 2015 samithaj
 # Copyright (C) 2016 Rahul Raturi
@@ -22,12 +22,13 @@
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Antonio Larrosa
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
-# Copyright (C) 2018 Bob Swift
 # Copyright (C) 2018 Kartik Ohri
 # Copyright (C) 2018 Vishal Choudhary
 # Copyright (C) 2018 virusMac
+# Copyright (C) 2018, 2021 Bob Swift
 # Copyright (C) 2019 Timur Enikeev
 # Copyright (C) 2020 Gabriel Ferreira
+# Copyright (C) 2021 Petit Minion
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -45,6 +46,7 @@
 
 
 from collections import OrderedDict
+from copy import deepcopy
 import datetime
 from functools import partial
 import os.path
@@ -57,13 +59,22 @@ from PyQt5 import (
 
 from picard import (
     PICARD_APP_ID,
-    config,
     log,
 )
 from picard.album import Album
+from picard.browser import addrelease
 from picard.cluster import (
     Cluster,
     FileList,
+)
+from picard.config import (
+    BoolOption,
+    FloatOption,
+    IntOption,
+    Option,
+    SettingConfigSection,
+    TextOption,
+    get_config,
 )
 from picard.const import PROGRAM_UPDATE_LEVELS
 from picard.const.sys import (
@@ -73,6 +84,7 @@ from picard.const.sys import (
 from picard.file import File
 from picard.formats import supported_formats
 from picard.plugin import ExtensionPoint
+from picard.script import get_file_naming_script_presets
 from picard.track import Track
 from picard.util import (
     icontheme,
@@ -109,6 +121,12 @@ from picard.ui.options.dialog import OptionsDialog
 from picard.ui.passworddialog import (
     PasswordDialog,
     ProxyDialog,
+)
+from picard.ui.profileeditor import ProfileEditorDialog
+from picard.ui.scripteditor import (
+    ScriptEditorDialog,
+    ScriptEditorExamples,
+    user_script_title,
 )
 from picard.ui.searchdialog.album import AlbumSearchDialog
 from picard.ui.searchdialog.track import TrackSearchDialog
@@ -159,34 +177,43 @@ class IgnoreSelectionContext:
 class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
     defaultsize = QtCore.QSize(780, 560)
-    autorestore = False
     selection_updated = QtCore.pyqtSignal(object)
+    ready_for_display = QtCore.pyqtSignal()
 
     options = [
-        config.Option("persist", "window_state", QtCore.QByteArray()),
-        config.Option("persist", "bottom_splitter_state", QtCore.QByteArray()),
-        config.BoolOption("persist", "window_maximized", False),
-        config.BoolOption("persist", "view_cover_art", True),
-        config.BoolOption("persist", "view_toolbar", True),
-        config.BoolOption("persist", "view_file_browser", False),
-        config.TextOption("persist", "current_directory", ""),
-        config.FloatOption("persist", "mediaplayer_playback_rate", 1.0),
-        config.IntOption("persist", "mediaplayer_volume", 50),
+        Option("persist", "window_state", QtCore.QByteArray()),
+        BoolOption("persist", "window_maximized", False),
+        BoolOption("persist", "view_metadata_view", True),
+        BoolOption("persist", "view_cover_art", True),
+        BoolOption("persist", "view_toolbar", True),
+        BoolOption("persist", "view_file_browser", False),
+        TextOption("persist", "current_directory", ""),
+        FloatOption("persist", "mediaplayer_playback_rate", 1.0),
+        IntOption("persist", "mediaplayer_volume", 50),
     ]
 
     def __init__(self, parent=None, disable_player=False):
         super().__init__(parent)
+        self.__shown = False
         self.selected_objects = []
         self.ignore_selection_changes = IgnoreSelectionContext(self.update_selection)
         self.toolbar = None
         self.player = None
         self.status_indicators = []
+        if DesktopStatusIndicator:
+            self.ready_for_display.connect(self._setup_desktop_status_indicator)
         if not disable_player:
             from picard.ui.playertoolbar import Player
             player = Player(self)
             if player.available:
                 self.player = player
                 self.player.error.connect(self._on_player_error)
+
+        self.script_editor_dialog = None
+        self.examples = None
+
+        self.check_and_repair_profiles()
+
         self.setupUi()
 
     def setupUi(self):
@@ -209,39 +236,38 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
         if IS_MACOS:
             self.setUnifiedTitleAndToolBarOnMac(True)
-            self.toolbar.setMovable(False)
-            self.search_toolbar.setMovable(False)
 
-        mainLayout = QtWidgets.QSplitter(QtCore.Qt.Vertical)
-        mainLayout.setChildrenCollapsible(False)
-        mainLayout.setContentsMargins(0, 0, 0, 0)
+        main_layout = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        main_layout.setObjectName('main_window_bottom_splitter')
+        main_layout.setChildrenCollapsible(False)
+        main_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.panel = MainPanel(self, mainLayout)
+        self.panel = MainPanel(self, main_layout)
+        self.panel.setObjectName('main_panel_splitter')
         self.file_browser = FileBrowser(self.panel)
         if not self.show_file_browser_action.isChecked():
             self.file_browser.hide()
         self.panel.insertWidget(0, self.file_browser)
-        self.panel.restore_state()
-
-        self.metadata_box = MetadataBox(self)
-        self.cover_art_box = CoverArtBox(self)
-        if not self.show_cover_art_action.isChecked():
-            self.cover_art_box.hide()
 
         self.log_dialog = LogView(self)
         self.history_dialog = HistoryView(self)
 
-        bottomLayout = QtWidgets.QHBoxLayout()
-        bottomLayout.setContentsMargins(0, 0, 0, 0)
-        bottomLayout.setSpacing(0)
-        bottomLayout.addWidget(self.metadata_box, 1)
-        bottomLayout.addWidget(self.cover_art_box, 0)
-        bottom = QtWidgets.QWidget()
-        bottom.setLayout(bottomLayout)
+        self.metadata_box = MetadataBox(self)
+        self.cover_art_box = CoverArtBox(self)
+        metadata_view_layout = QtWidgets.QHBoxLayout()
+        metadata_view_layout.setContentsMargins(0, 0, 0, 0)
+        metadata_view_layout.setSpacing(0)
+        metadata_view_layout.addWidget(self.metadata_box, 1)
+        metadata_view_layout.addWidget(self.cover_art_box, 0)
+        self.metadata_view = QtWidgets.QWidget()
+        self.metadata_view.setLayout(metadata_view_layout)
 
-        mainLayout.addWidget(self.panel)
-        mainLayout.addWidget(bottom)
-        self.setCentralWidget(mainLayout)
+        self.show_metadata_view()
+        self.show_cover_art()
+
+        main_layout.addWidget(self.panel)
+        main_layout.addWidget(self.metadata_view)
+        self.setCentralWidget(main_layout)
 
         # accessibility
         self.set_tab_order()
@@ -254,7 +280,6 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
     def set_sorting(self, sorting=True):
         self.panel.set_sorting(sorting)
-        # self.panel.collapse_clusters(not sorting)
 
     def keyPressEvent(self, event):
         # On macOS Command+Backspace triggers the so called "Forward Delete".
@@ -280,11 +305,13 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.metadata_box.restore_state()
 
     def showEvent(self, event):
+        if not self.__shown:
+            self.ready_for_display.emit()
+            self.__shown = True
         super().showEvent(event)
-        if DesktopStatusIndicator:
-            self.register_status_indicator(DesktopStatusIndicator(self.windowHandle()))
 
     def closeEvent(self, event):
+        config = get_config()
         if config.setting["quit_confirmation"] and not self.show_quit_confirmation():
             event.ignore()
             return
@@ -293,6 +320,10 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             config.persist['mediaplayer_volume'] = self.player.volume()
         self.saveWindowState()
         event.accept()
+
+    def _setup_desktop_status_indicator(self):
+        if DesktopStatusIndicator:
+            self.register_status_indicator(DesktopStatusIndicator(self.windowHandle()))
 
     def register_status_indicator(self, indicator):
         self.status_indicators.append(indicator)
@@ -323,31 +354,29 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         return True
 
     def saveWindowState(self):
+        config = get_config()
         config.persist["window_state"] = self.saveState()
         isMaximized = int(self.windowState()) & QtCore.Qt.WindowMaximized != 0
         self.save_geometry()
-        self.log_dialog.save_geometry()
-        self.history_dialog.save_geometry()
         config.persist["window_maximized"] = isMaximized
+        config.persist["view_metadata_view"] = self.show_metadata_view_action.isChecked()
         config.persist["view_cover_art"] = self.show_cover_art_action.isChecked()
         config.persist["view_toolbar"] = self.show_toolbar_action.isChecked()
         config.persist["view_file_browser"] = self.show_file_browser_action.isChecked()
-        config.persist["bottom_splitter_state"] = self.centralWidget().saveState()
         self.file_browser.save_state()
         self.panel.save_state()
         self.metadata_box.save_state()
 
     @restore_method
     def restoreWindowState(self):
+        config = get_config()
         self.restoreState(config.persist["window_state"])
         self.restore_geometry()
         if config.persist["window_maximized"]:
             self.setWindowState(QtCore.Qt.WindowMaximized)
-        bottom_splitter_state = config.persist["bottom_splitter_state"]
-        if bottom_splitter_state.isEmpty():
+        splitters = config.persist["splitters_MainWindow"]
+        if splitters is None or 'main_window_bottom_splitter' not in splitters:
             self.centralWidget().setSizes([366, 194])
-        else:
-            self.centralWidget().restoreState(bottom_splitter_state)
         self.file_browser.restore_state()
 
     def create_statusbar(self):
@@ -437,6 +466,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
     def _on_submit_acoustid(self):
         if self.tagger.use_acoustid:
+            config = get_config()
             if not config.setting["acoustid_apikey"]:
                 msg = QtWidgets.QMessageBox(self)
                 msg.setIcon(QtWidgets.QMessageBox.Information)
@@ -455,9 +485,18 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
                 self.tagger.acoustidmanager.submit()
 
     def create_actions(self):
+        config = get_config()
         self.options_action = QtWidgets.QAction(icontheme.lookup('preferences-desktop'), _("&Options..."), self)
         self.options_action.setMenuRole(QtWidgets.QAction.PreferencesRole)
         self.options_action.triggered.connect(self.show_options)
+
+        self.show_script_editor_action = QtWidgets.QAction(_("Open &file naming script editor..."))
+        self.show_script_editor_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Shift+S")))
+        self.show_script_editor_action.triggered.connect(self.open_file_naming_script_editor)
+
+        self.show_profile_editor_action = QtWidgets.QAction(_("Open option &profile editor..."))
+        self.show_profile_editor_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Shift+P")))
+        self.show_profile_editor_action.triggered.connect(self.open_profile_editor)
 
         self.cut_action = QtWidgets.QAction(icontheme.lookup('edit-cut', icontheme.ICON_SIZE_MENU), _("&Cut"), self)
         self.cut_action.setShortcut(QtGui.QKeySequence.Cut)
@@ -533,12 +572,34 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.browser_lookup_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Shift+L")))
         self.browser_lookup_action.triggered.connect(self.browser_lookup)
 
+        if addrelease.is_available():
+            self.submit_cluster_action = QtWidgets.QAction(_("Submit cluster as release..."), self)
+            self.submit_cluster_action.setStatusTip(_("Submit cluster as a new release to MusicBrainz"))
+            self.submit_cluster_action.setEnabled(False)
+            self.submit_cluster_action.triggered.connect(self.submit_cluster)
+
+            self.submit_file_as_recording_action = QtWidgets.QAction(_("Submit file as standalone recording..."), self)
+            self.submit_file_as_recording_action.setStatusTip(_("Submit file as a new recording to MusicBrainz"))
+            self.submit_file_as_recording_action.setEnabled(False)
+            self.submit_file_as_recording_action.triggered.connect(self.submit_file)
+
+            self.submit_file_as_release_action = QtWidgets.QAction(_("Submit file as release..."), self)
+            self.submit_file_as_release_action.setStatusTip(_("Submit file as a new release to MusicBrainz"))
+            self.submit_file_as_release_action.setEnabled(False)
+            self.submit_file_as_release_action.triggered.connect(partial(self.submit_file, as_release=True))
+        else:
+            self.submit_cluster_action = None
+            self.submit_file_as_recording_action = None
+            self.submit_file_as_release_action = None
+
         self.album_search_action = QtWidgets.QAction(icontheme.lookup('system-search'), _("Search for similar albums..."), self)
         self.album_search_action.setStatusTip(_("View similar releases and optionally choose a different release"))
         self.album_search_action.triggered.connect(self.show_more_albums)
 
         self.track_search_action = QtWidgets.QAction(icontheme.lookup('system-search'), _("Search for similar tracks..."), self)
         self.track_search_action.setStatusTip(_("View similar tracks and optionally choose a different release"))
+        self.track_search_action.setEnabled(False)
+        self.track_search_action.setShortcut(QtGui.QKeySequence(_("Ctrl+T")))
         self.track_search_action.triggered.connect(self.show_more_tracks)
 
         self.show_file_browser_action = QtWidgets.QAction(_("File &Browser"), self)
@@ -548,10 +609,18 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.show_file_browser_action.setShortcut(QtGui.QKeySequence(_("Ctrl+B")))
         self.show_file_browser_action.triggered.connect(self.show_file_browser)
 
+        self.show_metadata_view_action = QtWidgets.QAction(_("&Metadata"), self)
+        self.show_metadata_view_action.setCheckable(True)
+        if config.persist["view_metadata_view"]:
+            self.show_metadata_view_action.setChecked(True)
+        self.show_metadata_view_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Shift+M")))
+        self.show_metadata_view_action.triggered.connect(self.show_metadata_view)
+
         self.show_cover_art_action = QtWidgets.QAction(_("&Cover Art"), self)
         self.show_cover_art_action.setCheckable(True)
         if config.persist["view_cover_art"]:
             self.show_cover_art_action.setChecked(True)
+        self.show_cover_art_action.setEnabled(self.show_metadata_view_action.isChecked())
         self.show_cover_art_action.triggered.connect(self.show_cover_art)
 
         self.show_toolbar_action = QtWidgets.QAction(_("&Actions"), self)
@@ -654,7 +723,8 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.view_history_action = QtWidgets.QAction(_("View Activity &History"), self)
         self.view_history_action.triggered.connect(self.show_history)
         # TR: Keyboard shortcut for "View Activity History"
-        self.view_history_action.setShortcut(QtGui.QKeySequence(_("Ctrl+H")))
+        # On macOS ⌘+H is a system shortcut to hide the window. Use ⌘+Shift+H instead.
+        self.view_history_action.setShortcut(QtGui.QKeySequence(_("Ctrl+Shift+H") if IS_MACOS else _("Ctrl+H")))
 
         webservice_manager = self.tagger.webservice.manager
         webservice_manager.authenticationRequired.connect(self.show_password_dialog)
@@ -685,6 +755,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         if not drives:
             log.warning("CDROM: No CD-ROM drives found - Lookup CD functionality disabled")
         else:
+            config = get_config()
             shortcut_drive = config.setting["cd_lookup_device"].split(",")[0] if len(drives) > 1 else ""
             self.cd_lookup_action.setEnabled(discid is not None)
             self.cd_lookup_menu.clear()
@@ -707,12 +778,17 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             self.cd_lookup_action.setMenu(None)
 
     def toggle_rename_files(self, checked):
+        config = get_config()
         config.setting["rename_files"] = checked
+        self.update_script_editor_examples()
 
     def toggle_move_files(self, checked):
+        config = get_config()
         config.setting["move_files"] = checked
+        self.update_script_editor_examples()
 
     def toggle_tag_saving(self, checked):
+        config = get_config()
         config.setting["dont_write_tags"] = not checked
 
     def get_selected_or_unmatched_files(self):
@@ -752,6 +828,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         menu.addAction(self.remove_action)
         menu = self.menuBar().addMenu(_("&View"))
         menu.addAction(self.show_file_browser_action)
+        menu.addAction(self.show_metadata_view_action)
         menu.addAction(self.show_cover_art_action)
         menu.addSeparator()
         menu.addAction(self.show_toolbar_action)
@@ -762,6 +839,16 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         menu.addAction(self.enable_renaming_action)
         menu.addAction(self.enable_moving_action)
         menu.addAction(self.enable_tag_saving_action)
+
+        self.script_quick_selector_menu = QtWidgets.QMenu(_("&Select file naming script"))
+        self.script_quick_selector_menu.setIcon(icontheme.lookup('document-open'))
+        self.make_script_selector_menu()
+
+        menu.addMenu(self.script_quick_selector_menu)
+        menu.addSeparator()
+        menu.addAction(self.show_script_editor_action)
+        menu.addSeparator()
+        menu.addAction(self.show_profile_editor_action)
         menu.addSeparator()
         menu.addAction(self.options_action)
         menu = self.menuBar().addMenu(_("&Tools"))
@@ -771,6 +858,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         menu.addAction(self.analyze_action)
         menu.addAction(self.cluster_action)
         menu.addAction(self.browser_lookup_action)
+        menu.addAction(self.track_search_action)
         menu.addSeparator()
         menu.addAction(self.generate_fingerprints_action)
         menu.addAction(self.tags_from_filenames_action)
@@ -792,6 +880,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         menu.addAction(self.about_action)
 
     def update_toolbar_style(self):
+        config = get_config()
         if config.setting["toolbar_show_labels"]:
             self.toolbar.setToolButtonStyle(QtCore.Qt.ToolButtonTextUnderIcon)
             if self.player:
@@ -815,6 +904,8 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.insertToolBar(self.search_toolbar, self.toolbar)
         self.update_toolbar_style()
         toolbar.setObjectName("main_toolbar")
+        if IS_MACOS:
+            self.toolbar.setMovable(False)
 
         def add_toolbar_action(action):
             toolbar.addAction(action)
@@ -822,6 +913,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             widget.setFocusPolicy(QtCore.Qt.TabFocus)
             widget.setAttribute(QtCore.Qt.WA_MacShowFocusRect)
 
+        config = get_config()
         for action in config.setting['toolbar_layout']:
             if action == 'cd_lookup_action':
                 add_toolbar_action(self.cd_lookup_action)
@@ -843,9 +935,13 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         toolbar.hide()  # Hide by default
 
     def create_search_toolbar(self):
+        config = get_config()
         self.search_toolbar = toolbar = self.addToolBar(_("Search"))
         self.search_toolbar_toggle_action = self.search_toolbar.toggleViewAction()
         toolbar.setObjectName("search_toolbar")
+        if IS_MACOS:
+            self.search_toolbar.setMovable(False)
+
         search_panel = QtWidgets.QWidget(toolbar)
         hbox = QtWidgets.QHBoxLayout(search_panel)
         self.search_combo = QtWidgets.QComboBox(search_panel)
@@ -894,6 +990,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         prev_action = None
         current_action = None
         # Setting toolbar widget tab-orders for accessibility
+        config = get_config()
         for action in config.setting['toolbar_layout']:
             if action != 'separator':
                 try:
@@ -941,6 +1038,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         """Search for album, artist or track on the MusicBrainz website."""
         text = self.search_edit.text()
         entity = self.search_combo.itemData(self.search_combo.currentIndex())
+        config = get_config()
         self.tagger.search(text, entity,
                            config.setting["use_adv_search_syntax"],
                            mbid_matched_callback=self.search_mbid_found)
@@ -969,6 +1067,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         formats.insert(1, _("All files") + " (*)")
         files, _filter = QtWidgets.QFileDialog.getOpenFileNames(self, "", current_directory, ";;".join(formats))
         if files:
+            config = get_config()
             config.persist["current_directory"] = os.path.dirname(files[0])
             self.tagger.add_files(files)
 
@@ -977,6 +1076,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         current_directory = find_starting_directory()
 
         dir_list = []
+        config = get_config()
         if not config.setting["toolbar_multiselect"]:
             directory = QtWidgets.QFileDialog.getExistingDirectory(self, "", current_directory)
             if directory:
@@ -1013,7 +1113,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         return OptionsDialog.show_instance(page, self)
 
     def show_help(self):
-        webbrowser2.goto('documentation')
+        webbrowser2.open('documentation')
 
     def show_log(self):
         self.log_dialog.show()
@@ -1026,13 +1126,13 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.history_dialog.activateWindow()
 
     def open_bug_report(self):
-        webbrowser2.goto('troubleshooting')
+        webbrowser2.open('troubleshooting')
 
     def open_support_forum(self):
-        webbrowser2.goto('forum')
+        webbrowser2.open('forum')
 
     def open_donation_page(self):
-        webbrowser2.goto('donate')
+        webbrowser2.open('donate')
 
     def save(self):
         """Tell the tagger to save the selected objects."""
@@ -1072,6 +1172,8 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             QtGui.QDesktopServices.openUrl(self._openUrl(folder))
 
     def _ensure_fingerprinting_configured(self, callback):
+        config = get_config()
+
         def on_finished(result):
             callback(config.setting['fingerprinting_system'])
         if not config.setting['fingerprinting_system']:
@@ -1089,22 +1191,38 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             QtWidgets.QMessageBox.Yes)
         return ret == QtWidgets.QMessageBox.Yes
 
+    def get_first_obj_with_type(self, type):
+        for obj in self.selected_objects:
+            if isinstance(obj, type):
+                return obj
+        return None
+
     def show_more_tracks(self):
+        if not self.selected_objects:
+            return
         obj = self.selected_objects[0]
-        if isinstance(obj, Track):
+        if isinstance(obj, Track) and obj.files:
             obj = obj.files[0]
+        if not isinstance(obj, File):
+            log.debug('show_more_tracks expected a File, got %r' % obj)
+            return
         dialog = TrackSearchDialog(self)
         dialog.load_similar_tracks(obj)
         dialog.exec_()
 
     def show_more_albums(self):
-        obj = self.selected_objects[0]
+        obj = self.get_first_obj_with_type(Cluster)
+        if not obj:
+            log.debug('show_more_albums expected a Cluster, got %r' % obj)
+            return
         dialog = AlbumSearchDialog(self)
         dialog.show_similar_albums(obj)
         dialog.exec_()
 
     def view_info(self, default_tab=0):
-        if isinstance(self.selected_objects[0], Album):
+        if not self.selected_objects:
+            return
+        elif isinstance(self.selected_objects[0], Album):
             album = self.selected_objects[0]
             dialog = AlbumInfoDialog(album, self)
         elif isinstance(self.selected_objects[0], Cluster):
@@ -1121,13 +1239,53 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
     def cluster(self):
         self.tagger.cluster(self.selected_objects)
+        self.panel.update_current_view()
+        # Select clusters if no other item or only empty unclustered files item is selected
+        if not self.selected_objects or (len(self.selected_objects) == 1
+                and self.tagger.unclustered_files in self.selected_objects
+                and not self.tagger.unclustered_files.files):
+            self.panel.select_object(self.tagger.clusters)
         self.update_actions()
 
     def refresh(self):
         self.tagger.refresh(self.selected_objects)
 
     def browser_lookup(self):
+        if not self.selected_objects:
+            return
         self.tagger.browser_lookup(self.selected_objects[0])
+
+    def submit_cluster(self):
+        if self.selected_objects and self._check_add_release():
+            for obj in self.selected_objects:
+                if isinstance(obj, Cluster):
+                    addrelease.submit_cluster(obj)
+
+    def submit_file(self, as_release=False):
+        if self.selected_objects and self._check_add_release():
+            for file in iter_files_from_objects(self.selected_objects):
+                addrelease.submit_file(file, as_release=as_release)
+
+    def _check_add_release(self):
+        if addrelease.is_enabled():
+            return True
+        ret = QtWidgets.QMessageBox.question(self,
+            _("Browser integration not enabled"),
+            _("Submitting releases to MusicBrainz requires the browser integration to be enabled. Do you want to enable the browser integration now?"),
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.Yes)
+        if ret == QtWidgets.QMessageBox.Yes:
+            config = get_config()
+            config.setting["browser_integration"] = True
+            self.tagger.update_browser_integration()
+            if addrelease.is_enabled():
+                return True
+            else:
+                # Something went wrong, let the user configure browser integration manually
+                self.show_options("network")
+                return False
+        else:
+            return False
 
     @throttle(100)
     def update_actions(self):
@@ -1136,9 +1294,11 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         can_analyze = False
         can_refresh = False
         can_autotag = False
+        can_submit = False
         single = self.selected_objects[0] if len(self.selected_objects) == 1 else None
         can_view_info = bool(single and single.can_view_info())
         can_browser_lookup = bool(single and single.can_browser_lookup())
+        is_file = bool(single and isinstance(single, (File, Track)))
         have_files = bool(self.tagger.get_files_from_objects(self.selected_objects))
         have_objects = bool(self.selected_objects)
         for obj in self.selected_objects:
@@ -1154,8 +1314,10 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
                 can_refresh = True
             if obj.can_autotag():
                 can_autotag = True
+            if obj.can_submit():
+                can_submit = True
             # Skip further loops if all values now True.
-            if can_analyze and can_save and can_remove and can_refresh and can_autotag:
+            if can_analyze and can_save and can_remove and can_refresh and can_autotag and can_submit:
                 break
         self.remove_action.setEnabled(can_remove)
         self.save_action.setEnabled(can_save)
@@ -1168,9 +1330,15 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.play_file_action.setEnabled(have_files)
         self.open_folder_action.setEnabled(have_files)
         self.cut_action.setEnabled(have_objects)
+        if self.submit_cluster_action:
+            self.submit_cluster_action.setEnabled(can_submit)
+        if self.submit_file_as_recording_action:
+            self.submit_file_as_recording_action.setEnabled(have_files)
+        if self.submit_file_as_release_action:
+            self.submit_file_as_release_action.setEnabled(have_files)
         files = self.get_selected_or_unmatched_files()
         self.tags_from_filenames_action.setEnabled(bool(files))
-        self.track_search_action.setEnabled(have_objects)
+        self.track_search_action.setEnabled(is_file)
 
     def update_selection(self, objects=None, new_selection=True, drop_album_caches=False):
         if self.ignore_selection_changes:
@@ -1190,6 +1358,9 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
 
         if self.player:
             self.player.set_objects(self.selected_objects)
+
+        metadata_visible = self.metadata_view.isVisible()
+        coverart_visible = metadata_visible and self.cover_art_box.isVisible()
 
         if len(objects) == 1:
             obj = list(objects)[0]
@@ -1224,27 +1395,39 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
                         }
                     self.set_statusbar_message(msg, mparms, echo=None,
                                                history=None)
-        elif new_selection:
+        elif coverart_visible and new_selection:
             # Create a temporary file list which allows changing cover art for all selected files
             files = self.tagger.get_files_from_objects(objects)
             obj = FileList(files)
 
-        if new_selection:
-            self.metadata_box.selection_dirty = True
+        if coverart_visible and new_selection:
             self.cover_art_box.set_item(obj)
-        self.metadata_box.update(drop_album_caches=drop_album_caches)
+
+        if metadata_visible:
+            if new_selection:
+                self.metadata_box.selection_dirty = True
+            self.metadata_box.update(drop_album_caches=drop_album_caches)
         self.selection_updated.emit(objects)
+        self.update_script_editor_example_files()
 
     def refresh_metadatabox(self):
         self.tagger.window.metadata_box.selection_dirty = True
         self.tagger.window.metadata_box.update()
 
+    def show_metadata_view(self):
+        """Show/hide the metadata view (including the cover art box)."""
+        show = self.show_metadata_view_action.isChecked()
+        self.metadata_view.setVisible(show)
+        self.show_cover_art_action.setEnabled(show)
+        if show:
+            self.update_selection()
+
     def show_cover_art(self):
         """Show/hide the cover art box."""
-        if self.show_cover_art_action.isChecked():
-            self.cover_art_box.show()
-        else:
-            self.cover_art_box.hide()
+        show = self.show_cover_art_action.isChecked()
+        self.cover_art_box.setVisible(show)
+        if show:
+            self.update_selection()
 
     def show_toolbar(self):
         """Show/hide the Action toolbar."""
@@ -1265,6 +1448,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             self.file_browser.hide()
 
     def show_password_dialog(self, reply, authenticator):
+        config = get_config()
         if reply.url().host() == config.setting['server_host']:
             ret = QtWidgets.QMessageBox.question(self,
                 _("Authentication Required"),
@@ -1305,6 +1489,7 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
         self.check_for_update(True)
 
     def auto_update_check(self):
+        config = get_config()
         check_for_updates = config.setting['check_for_updates']
         update_check_days = config.setting['update_check_days']
         last_update_check = config.persist['last_update_check']
@@ -1323,15 +1508,182 @@ class MainWindow(QtWidgets.QMainWindow, PreserveGeometry):
             self.check_for_update(False)
 
     def check_for_update(self, show_always):
+        config = get_config()
         self.tagger.updatecheckmanager.check_update(
             show_always=show_always,
             update_level=config.setting['update_level'],
             callback=update_last_check_date
         )
 
+    def check_and_repair_profiles(self):
+        """Check the profiles and profile settings and repair the values if required.
+        Checks that there is a settings dictionary for each profile, and that no profiles
+        reference a non-existant file naming script.
+        """
+        script_id_key = "selected_file_naming_script_id"
+        config = get_config()
+        naming_scripts = config.setting["file_renaming_scripts"]
+        naming_script_ids = set(naming_scripts.keys())
+        naming_script_ids |= set(item["id"] for item in get_file_naming_script_presets())
+        profile_settings = deepcopy(config.profiles[SettingConfigSection.SETTINGS_KEY])
+        for profile in config.profiles[SettingConfigSection.PROFILES_KEY]:
+            p_id = profile["id"]
+            # Add empty settings if none found for a profile
+            if p_id not in profile_settings:
+                log.warning(
+                    "No settings dict found for profile '%s' (\"%s\").  Adding empty dict.",
+                    p_id,
+                    profile["title"],
+                )
+                profile_settings[p_id] = {}
+            # Remove any invalid naming script ids from profiles
+            if script_id_key in profile_settings[p_id]:
+                if profile_settings[p_id][script_id_key] not in naming_script_ids:
+                    log.warning(
+                        "Removing invalid naming script id '%s' from profile '%s' (\"%s\")",
+                        profile_settings[p_id][script_id_key],
+                        p_id,
+                        profile["title"],
+                    )
+                    profile_settings[p_id][script_id_key] = None
+        config.profiles[SettingConfigSection.SETTINGS_KEY] = profile_settings
+
+    def make_script_selector_menu(self):
+        """Update the sub-menu of available file naming scripts.
+        """
+        config = get_config()
+        naming_scripts = config.setting["file_renaming_scripts"]
+        selected_script_id = config.setting["selected_file_naming_script_id"]
+
+        self.script_quick_selector_menu.clear()
+
+        group = QtWidgets.QActionGroup(self.script_quick_selector_menu)
+        group.setExclusive(True)
+
+        def _add_menu_item(title, id):
+            script_action = QtWidgets.QAction(title, self.script_quick_selector_menu)
+            script_action.triggered.connect(partial(self.select_new_naming_script, id))
+            script_action.setCheckable(True)
+            script_action.setChecked(id == selected_script_id)
+            self.script_quick_selector_menu.addAction(script_action)
+            group.addAction(script_action)
+
+        for (id, naming_script) in sorted(naming_scripts.items(), key=lambda item: item[1]['title']):
+            _add_menu_item(user_script_title(naming_script['title']), id)
+
+        # Add preset scripts not provided in the user-defined scripts list.
+        for script_item in get_file_naming_script_presets():
+            _add_menu_item(script_item['title'], script_item['id'])
+
+    def select_new_naming_script(self, id):
+        """Update the currently selected naming script ID in the settings.
+
+        Args:
+            id (str): ID of the selected file naming script
+        """
+        config = get_config()
+        log.debug("Setting naming script to: %s", id)
+        config.setting["selected_file_naming_script_id"] = id
+        self.make_script_selector_menu()
+        if self.script_editor_dialog:
+            self.script_editor_dialog.set_selected_script_id(id, skip_check=False)
+
+    def open_file_naming_script_editor(self):
+        """Open the file naming script editor / manager in a new window.
+        """
+        if self.script_editor_dialog:
+            self.script_editor_dialog.load()
+        else:
+            self.examples = ScriptEditorExamples(tagger=self.tagger)
+            self.create_script_editor_dialog()
+        self.script_editor_dialog.show()
+        self.script_editor_dialog.raise_()
+        self.script_editor_dialog.activateWindow()
+        self.examples.update_sample_example_files()
+        self.show_script_editor_action.setEnabled(False)
+        self.options_action.setEnabled(False)
+
+    def create_script_editor_dialog(self):
+        """Create the file naming script editor manager window.
+        """
+        self.script_editor_dialog = ScriptEditorDialog(parent=self, examples=self.examples)
+        self.script_editor_dialog.signal_save.connect(self.script_editor_save)
+        self.script_editor_dialog.signal_selection_changed.connect(self.update_selector_from_script_editor)
+        self.script_editor_dialog.signal_update_scripts_list.connect(self.update_scripts_list_from_editor)
+        self.script_editor_dialog.signal_index_changed.connect(self.script_editor_index_changed)
+        self.script_editor_dialog.finished.connect(self.script_editor_closed)
+
+    def script_editor_save(self):
+        """Process "signal_save" signal from the script editor.
+        """
+        config = get_config()
+        config.setting["file_renaming_scripts"] = self.script_editor_dialog.naming_scripts
+        script_item = self.script_editor_dialog.get_selected_item()
+        config.setting["selected_file_naming_script_id"] = script_item["id"]
+        self.make_script_selector_menu()
+
+    def script_editor_closed(self):
+        """Process "finished" signal from the script editor.
+        """
+        self.show_script_editor_action.setEnabled(True)
+        self.options_action.setEnabled(True)
+
+    def update_script_editor_example_files(self):
+        """Update the list of example files for the file naming script editor.
+        """
+        if self.examples:
+            self.examples.update_sample_example_files()
+            self.update_script_editor_examples()
+
+    def update_script_editor_examples(self):
+        """Update the examples for the file naming script editor, using current settings.
+        """
+        if self.examples:
+            config = get_config()
+            override = {
+                "rename_files": config.setting["rename_files"],
+                "move_files": config.setting["move_files"],
+            }
+            self.examples.update_examples(override=override)
+            if self.script_editor_dialog:
+                self.script_editor_dialog.display_examples()
+
+    def script_editor_index_changed(self):
+        """Process "signal_index_changed" signal from the script editor.
+        """
+        self.script_editor_save()
+
+    def update_selector_from_script_editor(self):
+        """Process "signal_selection_changed" signal from the script editor.
+        """
+        self.script_editor_save()
+
+    def update_scripts_list_from_editor(self):
+        """Process "signal_update_scripts_list" signal from the script editor.
+        """
+        self.script_editor_save()
+
+    def open_profile_editor(self):
+        self.profile_editor_dialog = ProfileEditorDialog.show_instance(self)
+        self.profile_editor_dialog.finished.connect(self.profile_editor_dialog_finished)
+
+    def profile_editor_dialog_finished(self):
+        """Update menu bar entries to reflect any changes in profile selection.
+        """
+        config = get_config()
+        self.profile_editor_dialog.finished.disconnect()
+        self.profile_editor_dialog = None
+        self.enable_renaming_action.setChecked(config.setting["rename_files"])
+        self.enable_moving_action.setChecked(config.setting["move_files"])
+        self.enable_tag_saving_action.setChecked(not config.setting["dont_write_tags"])
+        self.make_script_selector_menu()
+        if self.script_editor_dialog:
+            self.script_editor_dialog.reload_after_profile()
+
 
 def update_last_check_date(is_success):
     if is_success:
+        config = get_config()
         config.persist['last_update_check'] = datetime.date.today().toordinal()
     else:
         log.debug('The update check was unsuccessful. The last update date will not be changed.')

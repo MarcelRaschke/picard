@@ -4,11 +4,11 @@
 #
 # Copyright (C) 2006-2007, 2011 Lukáš Lalinský
 # Copyright (C) 2009 Carlin Mangar
-# Copyright (C) 2009, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2012 Chad Wilson
 # Copyright (C) 2012-2014 Wieland Hoffmann
-# Copyright (C) 2013-2014, 2017-2019 Laurent Monin
+# Copyright (C) 2013-2014, 2017-2020 Laurent Monin
 # Copyright (C) 2014 Francois Ferrand
 # Copyright (C) 2015 Sophist-UK
 # Copyright (C) 2016 Ville Skyttä
@@ -43,12 +43,10 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
 from picard.album import Album
 from picard.cluster import Cluster
+from picard.config import get_config
 from picard.const import MAX_COVERS_TO_STACK
 from picard.coverart.image import (
     CoverArtImage,
@@ -398,7 +396,7 @@ class CoverArtBox(QtWidgets.QGroupBox):
             return
 
         if fallback_data:
-            self.load_remote_image(url, None, fallback_data)
+            self.load_remote_image(url, fallback_data)
 
         if url.scheme() in ('http', 'https'):
             path = url.path()
@@ -418,10 +416,9 @@ class CoverArtBox(QtWidgets.QGroupBox):
         elif url.scheme() == 'file':
             path = os.path.normpath(os.path.realpath(url.toLocalFile().rstrip("\0")))
             if path and os.path.exists(path):
-                mime = 'image/png' if path.lower().endswith('.png') else 'image/jpeg'
                 with open(path, 'rb') as f:
                     data = f.read()
-                self.load_remote_image(url, mime, data)
+                self.load_remote_image(url, data)
 
     def on_remote_image_fetched(self, url, data, reply, error, fallback_data=None):
         if error:
@@ -435,18 +432,24 @@ class CoverArtBox(QtWidgets.QGroupBox):
         # Some sites return a mime type with encoding like "image/jpeg; charset=UTF-8"
         mime = mime.split(';')[0]
         url_query = QtCore.QUrlQuery(url.query())
+        log.debug('Fetched remote image with MIME-Type %s from %s', mime, url.toString())
         # If mime indicates only binary data we can try to guess the real mime type
-        if mime in ('application/octet-stream', 'binary/data'):
-            mime = imageinfo.identify(data)[2]
-        if mime in ('image/jpeg', 'image/png'):
-            self.load_remote_image(url, mime, data)
-        elif url_query.hasQueryItem("imgurl"):
+        if (mime in ('application/octet-stream', 'binary/data') or mime.startswith('image/')
+              or imageinfo.supports_mime_type(mime)):
+            try:
+                self._try_load_remote_image(url, data)
+                return
+            except CoverArtImageError:
+                pass
+        if url_query.hasQueryItem("imgurl"):
             # This may be a google images result, try to get the URL which is encoded in the query
             url = QtCore.QUrl(url_query.queryItemValue("imgurl", QtCore.QUrl.FullyDecoded))
+            log.debug('Possible Google images result, trying to fetch imgurl=%s', url.toString())
             self.fetch_remote_image(url)
         elif url_query.hasQueryItem("mediaurl"):
             # Bing uses mediaurl
             url = QtCore.QUrl(url_query.queryItemValue("mediaurl", QtCore.QUrl.FullyDecoded))
+            log.debug('Possible Bing images result, trying to fetch imgurl=%s', url.toString())
             self.fetch_remote_image(url)
         else:
             log.warning("Can't load remote image with MIME-Type %s", mime)
@@ -454,17 +457,14 @@ class CoverArtBox(QtWidgets.QGroupBox):
                 self._load_fallback_data(url, fallback_data)
 
     def _load_fallback_data(self, url, data):
-        # Tests for image format obtained from file-magic
         try:
-            mime = imageinfo.identify(data)[2]
-        except imageinfo.IdentificationError as e:
-            log.warning("Unable to identify dropped data format: %s" % e)
-        else:
-            log.debug("Trying the dropped %s data", mime)
-            self.load_remote_image(url, mime, data)
+            log.debug("Trying to load image from dropped data")
+            self._try_load_remote_image(url, data)
             return
+        except CoverArtImageError as e:
+            log.debug("Unable to identify dropped data format: %s" % e)
 
-        # Try getting image out of HTML (e.g. for Goole image search detail view)
+        # Try getting image out of HTML (e.g. for Google image search detail view)
         try:
             html = data.decode()
             match = re.search(HTML_IMG_SRC_REGEX, html)
@@ -476,17 +476,21 @@ class CoverArtBox(QtWidgets.QGroupBox):
             log.debug("Trying URL parsed from HTML: %s", url.toString())
             self.fetch_remote_image(url)
 
-    def load_remote_image(self, url, mime, data):
+    def load_remote_image(self, url, data):
         try:
-            coverartimage = CoverArtImage(
-                url=url.toString(),
-                types=['front'],
-                data=data
-            )
+            self._try_load_remote_image(url, data)
         except CoverArtImageError as e:
             log.warning("Can't load image: %s" % e)
             return
 
+    def _try_load_remote_image(self, url, data):
+        coverartimage = CoverArtImage(
+            url=url.toString(),
+            types=['front'],
+            data=data
+        )
+
+        config = get_config()
         if config.setting["load_image_behavior"] == 'replace':
             set_image = set_image_replace
             debug_info = "Replacing with dropped %r in %r"
@@ -536,11 +540,14 @@ class CoverArtBox(QtWidgets.QGroupBox):
             debug_info = "Dropping %r to %r is not handled"
 
         log.debug(debug_info, coverartimage, self.item)
+        return coverartimage
 
     def choose_local_file(self):
         file_chooser = QtWidgets.QFileDialog(self)
+        extensions = ['*' + ext for ext in imageinfo.get_supported_extensions()]
+        extensions.sort()
         file_chooser.setNameFilters([
-            _("All supported image formats") + " (*.png *.jpg *.jpeg *.tif *.tiff *.gif *.pdf)",
+            _("All supported image formats") + " (" + " ".join(extensions) + ")",
             _("All files") + " (*)",
         ])
         if file_chooser.exec_():
@@ -549,6 +556,7 @@ class CoverArtBox(QtWidgets.QGroupBox):
                 self.fetch_remote_image(file_urls[0])
 
     def set_load_image_behavior(self, behavior):
+        config = get_config()
         config.setting["load_image_behavior"] = behavior
 
     def keep_original_images(self):
@@ -584,6 +592,7 @@ class CoverArtBox(QtWidgets.QGroupBox):
         action.setCheckable(True)
         action.triggered.connect(partial(self.set_load_image_behavior, behavior='replace'))
         load_image_behavior_group.addAction(action)
+        config = get_config()
         if config.setting["load_image_behavior"] == 'replace':
             action.setChecked(True)
         menu.addAction(action)

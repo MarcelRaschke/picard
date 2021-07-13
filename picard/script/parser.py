@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2006-2009, 2012 Lukáš Lalinský
 # Copyright (C) 2007 Javier Kohen
-# Copyright (C) 2008-2011, 2014-2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2011, 2014-2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2009 Nikolai Prokoschenko
 # Copyright (C) 2011-2012 Michael Wiencek
@@ -18,7 +18,7 @@
 # Copyright (C) 2017-2018 Antonio Larrosa
 # Copyright (C) 2018 Calvin Walton
 # Copyright (C) 2018 virusMac
-# Copyright (C) 2020 Bob Swift
+# Copyright (C) 2020-2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -33,6 +33,7 @@
 # You should have received a copy of the GNU General Public License
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+
 
 from collections.abc import MutableSequence
 from queue import LifoQueue
@@ -67,6 +68,10 @@ class ScriptEndOfFile(ScriptParseError):
 
 
 class ScriptSyntaxError(ScriptParseError):
+    pass
+
+
+class ScriptUnicodeError(ScriptSyntaxError):
     pass
 
 
@@ -201,13 +206,14 @@ class ScriptParser(object):
     r"""Tagger script parser.
 
 Grammar:
-  text       ::= [^$%] | '\$' | '\%' | '\(' | '\)' | '\,'
-  argtext    ::= [^$%(),] | '\$' | '\%' | '\(' | '\)' | '\,'
-  identifier ::= [a-zA-Z0-9_]
-  variable   ::= '%' identifier '%'
-  function   ::= '$' identifier '(' (argument (',' argument)*)? ')'
-  expression ::= (variable | function | text)*
-  argument   ::= (variable | function | argtext)*
+  unicodechar ::= '\u' [a-fA-F0-9]{4}
+  text        ::= [^$%] | '\$' | '\%' | '\(' | '\)' | '\,' | unicodechar
+  argtext     ::= [^$%(),] | '\$' | '\%' | '\(' | '\)' | '\,' | unicodechar
+  identifier  ::= [a-zA-Z0-9_]
+  variable    ::= '%' (identifier | ':')+ '%'
+  function    ::= '$' (identifier)+ '(' (argument (',' argument)*)? ')'
+  expression  ::= (variable | function | text)*
+  argument    ::= (variable | function | argtext)*
 """
 
     _function_registry = ExtensionPoint(label='function_registry')
@@ -221,6 +227,9 @@ Grammar:
 
     def __raise_char(self, ch):
         raise ScriptSyntaxError(StackItem(line=self._y, column=self._x), "Unexpected character '%s'" % ch)
+
+    def __raise_unicode(self, ch):
+        raise ScriptUnicodeError(StackItem(line=self._y, column=self._x), "Invalid unicode character '\\u%s'" % ch)
 
     def read(self):
         try:
@@ -238,6 +247,19 @@ Grammar:
             else:
                 self._x += 1
         return ch
+
+    def read_multi(self, count):
+        text = ch = self.read()
+        if not ch:
+            self.__raise_eof()
+        count -= 1
+        while ch and count:
+            ch = self.read()
+            if not ch:
+                self.__raise_eof()
+            text += ch
+            count -= 1
+        return text
 
     def unread(self):
         self._pos -= 1
@@ -288,15 +310,7 @@ Grammar:
         while True:
             ch = self.read()
             if ch == "\\":
-                ch = self.read()
-                if ch == 'n':
-                    text.append('\n')
-                elif ch == 't':
-                    text.append('\t')
-                elif ch not in "$%(),\\":
-                    self.__raise_char(ch)
-                else:
-                    text.append(ch)
+                text.append(self.parse_escape_sequence())
             elif ch is None:
                 break
             elif not top and ch == '(':
@@ -307,6 +321,25 @@ Grammar:
             else:
                 text.append(ch)
         return ScriptText("".join(text))
+
+    def parse_escape_sequence(self):
+        ch = self.read()
+        if ch == 'n':
+            return '\n'
+        elif ch == 't':
+            return '\t'
+        elif ch == 'u':
+            codepoint = self.read_multi(4)
+            try:
+                return chr(int(codepoint, 16))
+            except (TypeError, ValueError):
+                self.__raise_unicode(codepoint)
+        elif ch is None:
+            self.__raise_eof()
+        elif ch not in "$%(),\\":
+            self.__raise_char(ch)
+        else:
+            return ch
 
     def parse_expression(self, top):
         tokens = ScriptExpression()
@@ -397,4 +430,4 @@ class MultiValue(MutableSequence):
         return '%s(%r, %r, %r)' % (self.__class__.__name__, self.parser, self._multi, self.separator)
 
     def __str__(self):
-        return self.separator.join(self)
+        return self.separator.join([x for x in self if x])

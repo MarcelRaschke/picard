@@ -4,10 +4,11 @@
 #
 # Copyright (C) 2006-2008 Lukáš Lalinský
 # Copyright (C) 2014 Sophist-UK
-# Copyright (C) 2014, 2018 Laurent Monin
+# Copyright (C) 2014, 2018, 2020-2021 Laurent Monin
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2019-2020 Philipp Wolfer
+# Copyright (C) 2019-2021 Philipp Wolfer
+# Copyright (C) 2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -32,12 +33,20 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import config
+from picard import log
+from picard.config import (
+    Option,
+    get_config,
+)
+from picard.const import DOCS_BASE_URL
 from picard.const.sys import (
     IS_MACOS,
     IS_WIN,
 )
-from picard.util import restore_method
+from picard.util import (
+    restore_method,
+    webbrowser2,
+)
 
 
 if IS_MACOS:
@@ -51,28 +60,82 @@ else:
 class PreserveGeometry:
 
     defaultsize = None
-    autorestore = True
 
     def __init__(self):
-        config.Option("persist", self.opt_name(), QtCore.QByteArray())
-        if self.autorestore:
-            self.restore_geometry()
+        Option.add_if_missing("persist", self.opt_name(), QtCore.QByteArray())
+        Option.add_if_missing("persist", self.splitters_name(), {})
         if getattr(self, 'finished', None):
             self.finished.connect(self.save_geometry)
 
     def opt_name(self):
         return 'geometry_' + self.__class__.__name__
 
+    def splitters_name(self):
+        return 'splitters_' + self.__class__.__name__
+
+    def _get_lineage(self, widget):
+        """Try to develop a unique lineage / ancestry to identify the specified widget.
+        Args:
+            widget (QtWidget): Widget to process.
+        Returns:
+            generator: full ancestry for the specified widget.
+        """
+        parent = widget.parent()
+        if parent:
+            yield from self._get_lineage(parent)
+
+        yield widget.objectName() if widget.objectName() else widget.__class__.__name__
+
+    def _get_name(self, widget):
+        """Return the name of the widget.
+
+        Args:
+            widget (QtWidget): Widget to process.
+
+        Returns:
+            str: The name of the widget or the lineage if there is no name assigned.
+        """
+        name = widget.objectName()
+        if not name:
+            name = '.'.join(self._get_lineage(widget))
+            log.debug("Splitter does not have objectName(): %s" % name)
+        return name
+
+    @property
+    def _get_splitters(self):
+        try:
+            return {
+                self._get_name(splitter): splitter
+                for splitter in self.findChildren(QtWidgets.QSplitter)
+            }
+        except AttributeError:
+            return {}
+
     @restore_method
     def restore_geometry(self):
+        config = get_config()
         geometry = config.persist[self.opt_name()]
         if not geometry.isNull():
             self.restoreGeometry(geometry)
         elif self.defaultsize:
             self.resize(self.defaultsize)
+        splitters = config.persist[self.splitters_name()]
+        seen = set()
+        for name, splitter in self._get_splitters.items():
+            if name in splitters:
+                splitter.restoreState(splitters[name])
+                seen.add(name)
+        # remove unused saved states that don't match any existing splitter names
+        for name in set(splitters) - seen:
+            del config.persist[self.splitters_name()][name]
 
     def save_geometry(self):
+        config = get_config()
         config.persist[self.opt_name()] = self.saveGeometry()
+        config.persist[self.splitters_name()] = {
+            name: bytearray(splitter.saveState())
+            for name, splitter in self._get_splitters.items()
+        }
 
 
 class SingletonDialog:
@@ -100,16 +163,35 @@ class SingletonDialog:
 
 class PicardDialog(QtWidgets.QDialog, PreserveGeometry):
 
+    help_url = None
     flags = QtCore.Qt.WindowSystemMenuHint | QtCore.Qt.WindowTitleHint | QtCore.Qt.WindowCloseButtonHint
+    ready_for_display = QtCore.pyqtSignal()
 
     def __init__(self, parent=None):
         super().__init__(parent, self.flags)
+        self.__shown = False
+        self.ready_for_display.connect(self.restore_geometry)
 
     def keyPressEvent(self, event):
         if event.matches(QtGui.QKeySequence.Close):
             self.close()
+        elif event.matches(QtGui.QKeySequence.HelpContents) and self.help_url:
+            self.show_help()
         else:
             super().keyPressEvent(event)
+
+    def showEvent(self, event):
+        if not self.__shown:
+            self.ready_for_display.emit()
+            self.__shown = True
+        return super().showEvent(event)
+
+    def show_help(self):
+        if self.help_url:
+            url = self.help_url
+            if url.startswith('/'):
+                url = DOCS_BASE_URL + url
+            webbrowser2.open(url)
 
 
 # With py3, QObjects are no longer hashable unless they have

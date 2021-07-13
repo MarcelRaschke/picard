@@ -40,6 +40,7 @@ from picard.metadata import Metadata
 
 settings = {
     'clear_existing_tags': False,
+    'preserve_images': False,
     'embed_only_one_front_image': False,
     'enabled_plugins': '',
     'id3v23_join_with': '/',
@@ -115,6 +116,7 @@ TAGS = {
     'conductor': 'Foo',
     'copyright': 'Foo',
     'date': '2004',
+    'director': 'Foo',
     'discnumber': '1',
     'discsubtitle': 'Foo',
     'djmixer': 'Foo',

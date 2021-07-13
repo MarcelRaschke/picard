@@ -4,10 +4,10 @@
 #
 # Copyright (C) 2006-2007 Lukáš Lalinský
 # Copyright (C) 2010 fatih
-# Copyright (C) 2010-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2010-2011, 2014, 2018-2021 Philipp Wolfer
 # Copyright (C) 2012, 2014, 2018 Wieland Hoffmann
 # Copyright (C) 2013 Ionuț Ciocîrlan
-# Copyright (C) 2013-2014, 2018-2020 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2021 Laurent Monin
 # Copyright (C) 2014, 2017 Sophist-UK
 # Copyright (C) 2016 Frederik “Freso” S. Olesen
 # Copyright (C) 2017 Sambhav Kothari
@@ -31,7 +31,7 @@
 import builtins
 from collections import namedtuple
 from collections.abc import Iterator
-import os.path
+import re
 import unittest
 from unittest.mock import Mock
 
@@ -42,12 +42,14 @@ from picard.const.sys import IS_WIN
 from picard.util import (
     extract_year_from_date,
     find_best_match,
-    imageinfo,
     is_absolute_path,
     iter_files_from_objects,
     iter_unique,
     limited_join,
+    pattern_as_regex,
     sort_by_similarity,
+    tracknum_and_title_from_filename,
+    tracknum_from_filename,
     uniqify,
 )
 
@@ -290,63 +292,6 @@ class IsAbsolutePathTest(PicardTestCase):
         self.assertTrue(is_absolute_path('\\\\foo\\bar\\baz'))
 
 
-class ImageInfoTest(PicardTestCase):
-
-    def test_gif(self):
-        file = os.path.join('test', 'data', 'mb.gif')
-
-        with open(file, 'rb') as f:
-            self.assertEqual(
-                imageinfo.identify(f.read()),
-                (140, 96, 'image/gif', '.gif', 5806)
-            )
-
-    def test_png(self):
-        file = os.path.join('test', 'data', 'mb.png')
-
-        with open(file, 'rb') as f:
-            self.assertEqual(
-                imageinfo.identify(f.read()),
-                (140, 96, 'image/png', '.png', 11137)
-            )
-
-    def test_jpeg(self):
-        file = os.path.join('test', 'data', 'mb.jpg')
-
-        with open(file, 'rb') as f:
-            self.assertEqual(
-                imageinfo.identify(f.read()),
-                (140, 96, 'image/jpeg', '.jpg', 8550)
-            )
-
-    def test_pdf(self):
-        file = os.path.join('test', 'data', 'mb.pdf')
-
-        with open(file, 'rb') as f:
-            self.assertEqual(
-                imageinfo.identify(f.read()),
-                (0, 0, 'application/pdf', '.pdf', 10362)
-            )
-
-    def test_not_enough_data(self):
-        self.assertRaises(imageinfo.IdentificationError,
-                          imageinfo.identify, "x")
-        self.assertRaises(imageinfo.NotEnoughData, imageinfo.identify, "x")
-
-    def test_invalid_data(self):
-        self.assertRaises(imageinfo.IdentificationError,
-                          imageinfo.identify, "x" * 20)
-        self.assertRaises(imageinfo.UnrecognizedFormat,
-                          imageinfo.identify, "x" * 20)
-
-    def test_invalid_png_data(self):
-        data = '\x89PNG\x0D\x0A\x1A\x0A' + "x" * 20
-        self.assertRaises(imageinfo.IdentificationError,
-                          imageinfo.identify, data)
-        self.assertRaises(imageinfo.UnrecognizedFormat,
-                          imageinfo.identify, data)
-
-
 class CompareBarcodesTest(PicardTestCase):
 
     def test_same(self):
@@ -397,8 +342,7 @@ class SortBySimilarity(PicardTestCase):
         ]
 
     def candidates(self):
-        for value in self.test_values:
-            yield value
+        yield from self.test_values
 
     def test_sort_by_similarity(self):
         results = [result.name for result in sort_by_similarity(self.candidates)]
@@ -489,3 +433,140 @@ class IterUniqueTest(PicardTestCase):
         result = iter_unique(items)
         self.assertTrue(isinstance(result, Iterator))
         self.assertEqual([1, 2, 3, 4], list(result))
+
+
+class TracknumFromFilenameTest(PicardTestCase):
+
+    def test_returns_expected_tracknumber(self):
+        tests = (
+            (2, '2.mp3'),
+            (2, '02.mp3'),
+            (2, '002.mp3'),
+            (None, 'Foo.mp3'),
+            (1, 'Foo 0001.mp3'),
+            (1, '1 song.mp3'),
+            (99, '99 Foo.mp3'),
+            (42, '42. Foo.mp3'),
+            (None, '20000 Feet.mp3'),
+            (242, 'track no 242.mp3'),
+            (77, 'Track no. 77 .mp3'),
+            (242, 'track-242.mp3'),
+            (242, 'track nr 242.mp3'),
+            (242, 'track_242.mp3'),
+            (1, 'artist song 2004 track01 xxxx.ogg'),
+            (1, 'artist song 2004 track-no-01 xxxx.ogg'),
+            (1, 'artist song 2004 track-no_01 xxxx.ogg'),
+            (1, '01_foo.mp3'),
+            (1, '01ābc.mp3'),
+            (1, '01abc.mp3'),
+            (11, "11 Linda Jones - Things I've Been Through 08.flac"),
+            (1, "01 artist song [2004] (02).mp3"),
+            (1, "01 artist song [04].mp3"),
+            (7, "artist song [2004] [7].mp3"),
+            # (7, "artist song [2004] (7).mp3"),
+            (7, 'artist song [2004] [07].mp3'),
+            (7, 'artist song [2004] (07).mp3'),
+            (4, 'xx 01 artist song [04].mp3'),
+            (None, 'artist song-(666) (01) xxx.ogg'),
+            (None, 'song-70s 69 comment.mp3'),
+            (13, "2_13 foo.mp3"),
+            (13, "02-13 foo.mp3"),
+            (None, '1971.mp3'),
+            (42, '1971 Track 42.mp3'),
+            (None, "artist song [2004].mp3"),
+            (None, '0.mp3'),
+            (None, 'track00.mp3'),
+            (None, 'song [2004] [1000].mp3'),
+            (None, 'song 2015.mp3'),
+            (None, '2015 song.mp3'),
+            (None, '30,000 Pounds of Bananas.mp3'),
+            (None, 'Dalas 1 PM.mp3'),
+            (None, "Don't Stop the 80's.mp3"),
+            (None, 'Symphony no. 5 in D minor.mp3'),
+            (None, 'Song 2.mp3'),
+            (None, '80s best of.mp3'),
+            (None, 'best of 80s.mp3'),
+            # (None, '99 Luftballons.mp3'),
+            (7, '99 Luftballons Track 7.mp3'),
+            (None, 'Margin 0.001.mp3'),
+            (None, 'All the Small Things - blink‐182.mp3'),
+            (None, '99.99 Foo.mp3'),
+            (5, '٠٥ فاصله میان دو پرده.mp3'),
+            (23, '23 foo.mp3'),
+            (None, '²³ foo.mp3'),
+        )
+        for expected, filename in tests:
+            tracknumber = tracknum_from_filename(filename)
+            self.assertEqual(expected, tracknumber, filename)
+
+
+class TracknumAndTitleFromFilenameTest(PicardTestCase):
+
+    def test_returns_expected_tracknumber(self):
+        tests = (
+            ((None, 'Foo'), 'Foo.mp3'),
+            (('1', 'Track 0001'), 'Track 0001.mp3'),
+            (('99', 'Foo'), '99 Foo.mp3'),
+            (('42', 'Foo'), '0000042 Foo.mp3'),
+            (('2', 'Foo'), '0000002 Foo.mp3'),
+            ((None, '20000 Feet'), '20000 Feet.mp3'),
+            ((None, '20,000 Feet'), '20,000 Feet.mp3'),
+        )
+        for expected, filename in tests:
+            result = tracknum_and_title_from_filename(filename)
+            self.assertEqual(expected, result)
+
+    def test_namedtuple(self):
+        result = tracknum_and_title_from_filename('0000002 Foo.mp3')
+        self.assertEqual(result.tracknumber, '2')
+        self.assertEqual(result.title, 'Foo')
+
+
+class PatternAsRegexTest(PicardTestCase):
+
+    def test_regex(self):
+        regex = pattern_as_regex(r'/^foo.*/')
+        self.assertEqual(r'^foo.*', regex.pattern)
+        self.assertFalse(regex.flags & re.IGNORECASE)
+        self.assertFalse(regex.flags & re.MULTILINE)
+
+    def test_regex_flags(self):
+        regex = pattern_as_regex(r'/^foo.*/', flags=re.MULTILINE | re.IGNORECASE)
+        self.assertEqual(r'^foo.*', regex.pattern)
+        self.assertTrue(regex.flags & re.IGNORECASE)
+        self.assertTrue(regex.flags & re.MULTILINE)
+
+    def test_regex_extra_flags(self):
+        regex = pattern_as_regex(r'/^foo.*/im', flags=re.VERBOSE)
+        self.assertEqual(r'^foo.*', regex.pattern)
+        self.assertTrue(regex.flags & re.VERBOSE)
+        self.assertTrue(regex.flags & re.IGNORECASE)
+        self.assertTrue(regex.flags & re.MULTILINE)
+
+    def test_regex_raises(self):
+        with self.assertRaises(re.error):
+            pattern_as_regex(r'/^foo(.*/')
+
+    def test_wildcard(self):
+        regex = pattern_as_regex(r'(foo)*', allow_wildcards=True)
+        self.assertEqual(r'^\(foo\).*$', regex.pattern)
+        self.assertFalse(regex.flags & re.IGNORECASE)
+        self.assertFalse(regex.flags & re.MULTILINE)
+
+    def test_wildcard_flags(self):
+        regex = pattern_as_regex(r'(foo)*', allow_wildcards=True, flags=re.MULTILINE | re.IGNORECASE)
+        self.assertEqual(r'^\(foo\).*$', regex.pattern)
+        self.assertTrue(regex.flags & re.IGNORECASE)
+        self.assertTrue(regex.flags & re.MULTILINE)
+
+    def test_string_match(self):
+        regex = pattern_as_regex(r'(foo)*', allow_wildcards=False)
+        self.assertEqual(r'\(foo\)\*', regex.pattern)
+        self.assertFalse(regex.flags & re.IGNORECASE)
+        self.assertFalse(regex.flags & re.MULTILINE)
+
+    def test_string_match_flags(self):
+        regex = pattern_as_regex(r'(foo)*', allow_wildcards=False, flags=re.MULTILINE | re.IGNORECASE)
+        self.assertEqual(r'\(foo\)\*', regex.pattern)
+        self.assertTrue(regex.flags & re.IGNORECASE)
+        self.assertTrue(regex.flags & re.MULTILINE)

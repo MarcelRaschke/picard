@@ -4,7 +4,7 @@
 #
 # Copyright (C) 2004 Robert Kaye
 # Copyright (C) 2006-2009, 2011-2012, 2014 Lukáš Lalinský
-# Copyright (C) 2008-2011, 2014, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2011, 2014, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2009 david
 # Copyright (C) 2010 fatih
@@ -12,7 +12,7 @@
 # Copyright (C) 2012, 2014-2015 Wieland Hoffmann
 # Copyright (C) 2013 Ionuț Ciocîrlan
 # Copyright (C) 2013-2014 Sophist-UK
-# Copyright (C) 2013-2014, 2018-2020 Laurent Monin
+# Copyright (C) 2013-2014, 2018-2021 Laurent Monin
 # Copyright (C) 2014 Johannes Dewender
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 barami
@@ -378,35 +378,59 @@ def iter_unique(seq):
 
 
 # order is important
-_tracknum_regexps = (
+_tracknum_regexps = [re.compile(r, re.I) for r in (
     # search for explicit track number (prefix "track")
-    r"track[\s_-]*(?:no|nr)?[\s_-]*(\d+)",
-    # search for 2-digit number at start of string
-    r"^(\d{2})\D",
-    # search for 2-digit number at end of string
-    r"\D(\d{2})$",
-)
+    r"track[\s_-]*(?:(?:no|nr)\.?)?[\s_-]*(?P<number>\d+)",
+    # search for 1- or 2-digit number at start of string (additional leading zeroes are allowed)
+    # An optional disc number preceeding the track number is ignored.
+    r"^(?:\d+[\s_-])?(?P<number>0*\d{1,2})(?:\.)[^0-9,]",  # "99. ", but not "99.02"
+    r"^(?:\d+[\s_-])?(?P<number>0*\d{1,2})[^0-9,.s]",
+    # search for 2-digit number at end of string (additional leading zeroes are allowed)
+    r"[^0-9,.](?P<number>0*\d{2})$",
+    r"[^0-9,.]\[(?P<number>0*\d{1,2})\]$",
+    r"[^0-9,.]\((?P<number>0*\d{2})\)$",
+    # File names which consist of only a number
+    r"^(?P<number>\d+)$",
+)]
 
 
 def tracknum_from_filename(base_filename):
     """Guess and extract track number from filename
     Returns `None` if none found, the number as integer else
     """
-    filename, _ = os.path.splitext(base_filename)
-    for r in _tracknum_regexps:
-        match = re.search(r, filename, re.I)
+    filename, _ext = os.path.splitext(base_filename)
+    for pattern in _tracknum_regexps:
+        match = pattern.search(filename)
         if match:
-            n = int(match.group(1))
-            if n > 0:
+            n = int(match.group('number'))
+            # Numbers above 1900 are often years, track numbers should be much
+            # smaller even for extensive collections
+            if n > 0 and n < 1900:
                 return n
-    # find all numbers between 1 and 99
-    # 4-digit or more numbers are very unlikely to be a track number
-    # smaller number is preferred in any case
-    numbers = sorted([int(n) for n in re.findall(r'\d+', filename) if
-                      0 < int(n) <= 99])
-    if numbers:
-        return numbers[0]
     return None
+
+
+GuessedFromFilename = namedtuple('GuessedFromFilename', ('tracknumber', 'title'))
+
+
+def tracknum_and_title_from_filename(base_filename):
+    """Guess tracknumber and title from filename.
+    Uses `tracknum_from_filename` to guess the tracknumber. The filename is used
+    as the title. If the tracknumber is at the beginning of the title it gets stripped.
+
+    Returns a tuple `(tracknumber, title)`.
+    """
+    filename, _ext = os.path.splitext(base_filename)
+    title = filename
+    tracknumber = tracknum_from_filename(base_filename)
+    if tracknumber is not None:
+        tracknumber = str(tracknumber)
+        stripped_filename = filename.lstrip('0')
+        tnlen = len(tracknumber)
+        if stripped_filename[:tnlen] == tracknumber:
+            title = stripped_filename[tnlen:].lstrip()
+
+    return GuessedFromFilename(tracknumber, title)
 
 
 def is_hidden(filepath):
@@ -708,3 +732,42 @@ def extract_year_from_date(dt):
             return parse(dt).year
     except (TypeError, ValueError):
         return None
+
+
+def pattern_as_regex(pattern, allow_wildcards=False, flags=0):
+    """Parses a string and interprets it as a matching pattern.
+
+    - If pattern is of the form /pattern/flags it is interpreted as a regular expression (e.g. `/foo.*/`).
+      The flags are optional and in addition to the flags passed in the `flags` function parameter. Supported
+      flags in the expression are "i" (ignore case) and "m" (multiline)
+    - Otherwise if `allow_wildcards` is True, it is interpreted as a pattern that allows wildcard matching (see below)
+    - If `allow_wildcards` is False a regex matching the literal string is returned
+
+    Wildcard matching currently supports these characters:
+    - `*`: Matches an arbitrary number of characters or none, e.g. `foo*`
+
+    Args:
+        pattern: The pattern as a string
+        allow_wildcards: If true and if the the pattern is not interpreted as a regex wildard matching is allowed.
+        flags: Additional regex flags to set (e.g. `re.I`)
+
+    Returns: An re.Pattern instance
+
+    Raises: `re.error` if the regular expression could not be parsed
+    """
+    plain_pattern = pattern.rstrip('im')
+    if len(plain_pattern) > 2 and plain_pattern[0] == '/' and plain_pattern[-1] == '/':
+        extra_flags = pattern[len(plain_pattern):]
+        if 'i' in extra_flags:
+            flags |= re.IGNORECASE
+        if 'm' in extra_flags:
+            flags |= re.MULTILINE
+        return re.compile(plain_pattern[1:-1], flags)
+    elif allow_wildcards:
+        # FIXME?: only support '*' (not '?' or '[abc]')
+        # replace multiple '*' by one
+        pattern = re.sub(r'\*+', '*', pattern)
+        regex = '.*'.join([re.escape(x) for x in pattern.split('*')])
+        return re.compile('^' + regex + '$', flags)
+    else:
+        return re.compile(re.escape(pattern), flags)

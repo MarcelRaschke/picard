@@ -3,11 +3,11 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2009, 2011 Lukáš Lalinský
-# Copyright (C) 2009-2011, 2018-2020 Philipp Wolfer
+# Copyright (C) 2009-2011, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011-2014 Wieland Hoffmann
 # Copyright (C) 2012-2013 Michael Wiencek
 # Copyright (C) 2013 Calvin Walton
-# Copyright (C) 2013-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2013-2015, 2018-2020 Laurent Monin
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
 #
@@ -92,6 +92,7 @@ class APEv2File(File):
     __translate = {
         "albumartist": "Album Artist",
         "remixer": "MixArtist",
+        "director": "Director",
         "website": "Weblink",
         "discsubtitle": "DiscSubtitle",
         "bpm": "BPM",
@@ -190,12 +191,15 @@ class APEv2File(File):
             tags = mutagen.apev2.APEv2()
         images_to_save = list(metadata.images.to_be_saved_to_tags())
         if config.setting["clear_existing_tags"]:
+            preserved = []
+            if config.setting['preserve_images']:
+                preserved = list(self._iter_cover_art_tags(tags))
             tags.clear()
+            for name, value in preserved:
+                tags[name] = value
         elif images_to_save:
-            for name, value in tags.items():
-                if (value.kind == mutagen.apev2.BINARY
-                    and name.lower().startswith('cover art')):
-                    del tags[name]
+            for name, value in self._iter_cover_art_tags(tags):
+                del tags[name]
         temp = {}
         for name, value in metadata.items():
             if name.startswith("~") or not self.supports_tag(name):
@@ -272,6 +276,12 @@ class APEv2File(File):
         else:
             return name.title()
 
+    @staticmethod
+    def _iter_cover_art_tags(tags):
+        for name, value in tags.items():
+            if value.kind == mutagen.apev2.BINARY and name.lower().startswith('cover art'):
+                yield (name, value)
+
     @classmethod
     def supports_tag(cls, name):
         return (bool(name) and name not in UNSUPPORTED_TAGS
@@ -306,7 +316,7 @@ class WavPackFile(APEv2File):
         if isfile(wvc_filename):
             config = get_config()
             if config.setting["rename_files"] or config.setting["move_files"]:
-                self._rename(wvc_filename, metadata)
+                self._rename(wvc_filename, metadata, config.setting)
         return File._save_and_rename(self, old_filename, metadata)
 
 

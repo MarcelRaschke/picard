@@ -3,8 +3,8 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2007, 2014, 2016 Lukáš Lalinský
-# Copyright (C) 2014, 2019-2020 Philipp Wolfer
-# Copyright (C) 2014-2016, 2018-2020 Laurent Monin
+# Copyright (C) 2014, 2019-2021 Philipp Wolfer
+# Copyright (C) 2014-2016, 2018-2021 Laurent Monin
 # Copyright (C) 2015 Ohm Patel
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 Wieland Hoffmann
@@ -13,6 +13,8 @@
 # Copyright (C) 2017 Sambhav Kothari
 # Copyright (C) 2018 Bob Swift
 # Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2020 RomFouq
+# Copyright (C) 2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -79,18 +81,21 @@ DOCS_BASE_URL = "https://picard-docs.musicbrainz.org/" + DOCS_VERSION + DOCS_LAN
 
 # URLs
 PICARD_URLS = {
-    'home':                "https://picard.musicbrainz.org/",
-    'documentation':       DOCS_BASE_URL + '/',
-    'troubleshooting':     DOCS_BASE_URL + '/troubleshooting/troubleshooting.html',
-    'doc_options':         DOCS_BASE_URL + '/config/configuration.html',
-    'doc_scripting':       DOCS_BASE_URL + '/extending/scripting.html',
-    'doc_cover_art_types': "https://musicbrainz.org/doc/Cover_Art/Types",
-    'plugins':             "https://picard.musicbrainz.org/plugins/",
-    'forum':               "https://community.metabrainz.org/c/picard",
-    'donate':              "https://metabrainz.org/donate",
-    'chromaprint':         "https://acoustid.org/chromaprint#download",
-    'acoustid_apikey':     "https://acoustid.org/api-key",
-    'acoustid_track':      "https://acoustid.org/track/",
+    'home':                    "https://picard.musicbrainz.org/",
+    'documentation':           DOCS_BASE_URL + '/',
+    'troubleshooting':         DOCS_BASE_URL + '/troubleshooting/troubleshooting.html',
+    'doc_options':             DOCS_BASE_URL + '/config/configuration.html',
+    'doc_scripting':           DOCS_BASE_URL + '/extending/scripting.html',
+    'doc_tags_from_filenames': DOCS_BASE_URL + '/usage/tags_from_file_names.html',
+    'doc_naming_script_edit':  DOCS_BASE_URL + '/config/options_filerenaming_editor.html',
+    'doc_profile_edit':        DOCS_BASE_URL + '/usage/option_profiles.html',
+    'doc_cover_art_types':     "https://musicbrainz.org/doc/Cover_Art/Types",
+    'plugins':                 "https://picard.musicbrainz.org/plugins/",
+    'forum':                   "https://community.metabrainz.org/c/picard",
+    'donate':                  "https://metabrainz.org/donate",
+    'chromaprint':             "https://acoustid.org/chromaprint#download",
+    'acoustid_apikey':         "https://acoustid.org/api-key",
+    'acoustid_track':          "https://acoustid.org/track/",
 }
 
 # Various Artists MBID
@@ -174,7 +179,7 @@ PROGRAM_UPDATE_LEVELS = OrderedDict(
 
 DEFAULT_FILE_NAMING_FORMAT = "$if2(%albumartist%,%artist%)/\n" \
     "$if(%albumartist%,%album%/,)\n" \
-    "$if($gt(%totaldiscs%,1),%discnumber%-,)" \
+    "$if($gt(%totaldiscs%,1),$if($gt(%totaldiscs%,9),$num(%discnumber%,2),%discnumber%)-,)" \
     "$if($and(%albumartist%,%tracknumber%),$num(%tracknumber%,2) ,)" \
     "$if(%_multiartist%,%artist% - ,)" \
     "%title%"
@@ -182,3 +187,8 @@ DEFAULT_FILE_NAMING_FORMAT = "$if2(%albumartist%,%artist%)/\n" \
 
 DEFAULT_NUMBERED_SCRIPT_NAME = N_("My script %d")
 DEFAULT_SCRIPT_NAME = N_("My script")
+DEFAULT_COVER_IMAGE_FILENAME = "cover"
+DEFAULT_NUMBERED_PROFILE_NAME = N_("My profile %d")
+DEFAULT_PROFILE_NAME = N_("My profile")
+
+SCRIPT_LANGUAGE_VERSION = '1.1'

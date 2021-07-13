@@ -8,7 +8,7 @@ jobs:
     strategy:
       matrix:
         os: [macos-latest, ubuntu-latest, windows-latest]
-        python-version: [3.5, 3.6, 3.7, 3.8, 3.9]
+        python-version: [3.6, 3.7, 3.8, 3.9]
     env:
       CODACY_PROJECT_TOKEN: ${{ secrets.CODACY_PROJECT_TOKEN }}
 
@@ -59,9 +59,7 @@ jobs:
           "PyQt5==5.13.2",
           "PyQt5==5.12.3",
           "PyQt5==5.11.3",
-          "PyQt5==5.10.1 sip==4.19.8",
-          "PyQt5==5.9.2 sip==4.19.8",
-          "PyQt5==5.8.2 sip==4.19.8 mutagen==1.37"
+          "PyQt5==5.10.1 sip==4.19.8 mutagen==1.37",
         ]
 
     steps:
@@ -112,7 +110,7 @@ jobs:
         pip install .
     - name: Test running installed package
       if: runner.os != 'Windows'
-      run: picard --long-version
+      run: picard --long-version --no-crash-dialog
     - name: Verify sdist package
       if: runner.os != 'Windows'
       run: |

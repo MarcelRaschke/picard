@@ -6,7 +6,7 @@
 # Copyright (C) 2007 Robert Kaye
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2008 Hendrik van Antwerpen
-# Copyright (C) 2008-2011, 2014-2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2011, 2014-2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2009 Nikolai Prokoschenko
 # Copyright (C) 2011 Tim Blechmann
@@ -14,14 +14,16 @@
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2012 Your Name
 # Copyright (C) 2012-2013 Wieland Hoffmann
-# Copyright (C) 2013-2014, 2016, 2018-2019 Laurent Monin
-# Copyright (C) 2013-2014, 2017 Sophist-UK
+# Copyright (C) 2013-2014, 2016, 2018-2020 Laurent Monin
+# Copyright (C) 2013-2014, 2017, 2020 Sophist-UK
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 Simon Legner
 # Copyright (C) 2016 Suhas
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
 # Copyright (C) 2020 Gabriel Ferreira
+# Copyright (C) 2021 Petit Minion
+# Copyright (C) 2021 Bob Swift
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -51,10 +53,7 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
 from picard.album import (
     Album,
     NatAlbum,
@@ -63,6 +62,11 @@ from picard.cluster import (
     Cluster,
     ClusterList,
     UnclusteredFiles,
+)
+from picard.config import (
+    BoolOption,
+    Option,
+    get_config,
 )
 from picard.file import File
 from picard.plugin import ExtensionPoint
@@ -144,9 +148,7 @@ def get_match_color(similarity, basecolor):
 
 class MainPanel(QtWidgets.QSplitter):
 
-    options = [
-        config.Option("persist", "splitter_state", QtCore.QByteArray()),
-    ]
+    options = []
 
     columns = [
         (N_('Title'), 'title'),
@@ -165,6 +167,7 @@ class MainPanel(QtWidgets.QSplitter):
         (N_('Fingerprint status'), '~fingerprint'),
         (N_('Date'), 'date'),
         (N_('Original Release Date'), 'originaldate'),
+        (N_('Cover'), 'covercount'),
     ]
 
     _column_indexes = {column[1]: i for i, column in enumerate(columns)}
@@ -231,13 +234,8 @@ class MainPanel(QtWidgets.QSplitter):
         tab_order(prev, after)
 
     def save_state(self):
-        config.persist["splitter_state"] = self.saveState()
         for view in self._views:
             view.save_state()
-
-    @restore_method
-    def restore_state(self):
-        self.restoreState(config.persist["splitter_state"])
 
     def create_icons(self):
         if hasattr(QtWidgets.QStyle, 'SP_DirIcon'):
@@ -314,11 +312,13 @@ class MainPanel(QtWidgets.QSplitter):
         for view in self._views:
             view.setSortingEnabled(sort)
 
-    def collapse_clusters(self, collapse=True):
-        if collapse:
-            self._views[0].collapseAll()
-        else:
-            self._views[0].expandAll()
+    def select_object(self, obj):
+        item = obj.item
+        for view in self._views:
+            if view.indexFromItem(item).isValid():
+                view.setCurrentItem(item)
+                self._update_selection(view)
+                break
 
 
 def paint_fingerprint_icon(painter, rect, icon):
@@ -370,10 +370,6 @@ class ConfigurableColumnsHeader(TristateSortHeaderView):
     def update_visible_columns(self, columns):
         for i, column in enumerate(MainPanel.columns):
             self.show_column(i, i in columns)
-
-    @property
-    def visible_columns(self):
-        return self._visible_columns
 
     def contextMenuEvent(self, event):
         menu = QtWidgets.QMenu(self)
@@ -461,6 +457,7 @@ class BaseTreeView(QtWidgets.QTreeWidget):
         item = self.itemAt(event.pos())
         if not item:
             return
+        config = get_config()
         obj = item.obj
         plugin_actions = None
         can_view_info = self.window.view_info_action.isEnabled()
@@ -485,6 +482,8 @@ class BaseTreeView(QtWidgets.QTreeWidget):
             if can_view_info:
                 menu.addAction(self.window.view_info_action)
             menu.addAction(self.window.browser_lookup_action)
+            if self.window.submit_cluster_action:
+                menu.addAction(self.window.submit_cluster_action)
             menu.addSeparator()
             menu.addAction(self.window.autotag_action)
             menu.addAction(self.window.analyze_action)
@@ -505,6 +504,10 @@ class BaseTreeView(QtWidgets.QTreeWidget):
             menu.addAction(self.window.play_file_action)
             menu.addAction(self.window.open_folder_action)
             menu.addAction(self.window.browser_lookup_action)
+            if self.window.submit_file_as_recording_action:
+                menu.addAction(self.window.submit_file_as_recording_action)
+            if self.window.submit_file_as_release_action:
+                menu.addAction(self.window.submit_file_as_release_action)
             menu.addSeparator()
             menu.addAction(self.window.autotag_action)
             menu.addAction(self.window.analyze_action)
@@ -645,10 +648,12 @@ class BaseTreeView(QtWidgets.QTreeWidget):
 
     @restore_method
     def restore_state(self):
+        config = get_config()
         self._restore_state(config.persist[self.header_state.name])
         self.header().lock(config.persist[self.header_locked.name])
 
     def save_state(self):
+        config = get_config()
         config.persist[self.header_state.name] = self.header().saveState()
         config.persist[self.header_locked.name] = self.header().is_locked
 
@@ -805,8 +810,8 @@ class BaseTreeView(QtWidgets.QTreeWidget):
 
 class FileTreeView(BaseTreeView):
 
-    header_state = config.Option("persist", "file_view_header_state", QtCore.QByteArray())
-    header_locked = config.BoolOption("persist", "file_view_header_locked", False)
+    header_state = Option("persist", "file_view_header_state", QtCore.QByteArray())
+    header_locked = BoolOption("persist", "file_view_header_locked", False)
 
     def __init__(self, window, parent=None):
         super().__init__(window, parent)
@@ -836,8 +841,8 @@ class FileTreeView(BaseTreeView):
 
 class AlbumTreeView(BaseTreeView):
 
-    header_state = config.Option("persist", "album_view_header_state", QtCore.QByteArray())
-    header_locked = config.BoolOption("persist", "album_view_header_locked", False)
+    header_state = Option("persist", "album_view_header_state", QtCore.QByteArray())
+    header_locked = BoolOption("persist", "album_view_header_locked", False)
 
     def __init__(self, window, parent=None):
         super().__init__(window, parent)

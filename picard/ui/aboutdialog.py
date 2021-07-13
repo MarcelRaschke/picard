@@ -3,11 +3,11 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2014 Lukáš Lalinský
-# Copyright (C) 2008, 2013, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008, 2013, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011 Pavan Chander
 # Copyright (C) 2011, 2013 Wieland Hoffmann
 # Copyright (C) 2013 Michael Wiencek
-# Copyright (C) 2013-2015, 2018 Laurent Monin
+# Copyright (C) 2013-2015, 2018, 2020 Laurent Monin
 # Copyright (C) 2014 Ismael Olea
 # Copyright (C) 2017 Sambhav Kothari
 #
@@ -25,6 +25,7 @@
 # along with this program; if not, write to the Free Software
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
+
 from PyQt5 import QtCore
 
 from picard.const import PICARD_URLS
@@ -39,8 +40,6 @@ from picard.ui.ui_aboutdialog import Ui_AboutDialog
 
 
 class AboutDialog(PicardDialog, SingletonDialog):
-
-    autorestore = False
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -61,7 +60,7 @@ class AboutDialog(PicardDialog, SingletonDialog):
             if name != 'version'])
 
         args['formats'] = ", ".join(map(lambda x: x[1:], supported_extensions()))
-        args['copyright_years'] = '2004-2020'
+        args['copyright_years'] = '2004-2021'
         args['authors_credits'] = ", ".join([
             'Robert Kaye',
             'Lukáš Lalinský',

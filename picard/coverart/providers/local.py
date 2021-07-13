@@ -2,10 +2,10 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2015, 2018-2019 Laurent Monin
+# Copyright (C) 2015, 2018-2020 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
-# Copyright (C) 2019 Philipp Wolfer
+# Copyright (C) 2019-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -25,7 +25,10 @@
 import os
 import re
 
-from picard import config
+from picard.config import (
+    TextOption,
+    get_config,
+)
 from picard.coverart.image import LocalFileCoverArtImage
 from picard.coverart.providers.provider import (
     CoverArtProvider,
@@ -42,11 +45,10 @@ class ProviderOptionsLocal(ProviderOptions):
     """
 
     HELP_URL = '/config/options_local_files.html'
-    _DEFAULT_LOCAL_COVER_ART_REGEX = r'^(?:cover|folder|albumart)(.*)\.(?:jpe?g|png|gif|tiff?)$'
+    _DEFAULT_LOCAL_COVER_ART_REGEX = r'^(?:cover|folder|albumart)(.*)\.(?:jpe?g|png|gif|tiff?|webp)$'
 
     options = [
-        config.TextOption("setting", "local_cover_regex",
-                          _DEFAULT_LOCAL_COVER_ART_REGEX),
+        TextOption("setting", "local_cover_regex", _DEFAULT_LOCAL_COVER_ART_REGEX),
     ]
 
     _options_ui = Ui_LocalOptions
@@ -60,9 +62,11 @@ class ProviderOptionsLocal(ProviderOptions):
         self.ui.local_cover_regex_edit.setText(self._DEFAULT_LOCAL_COVER_ART_REGEX)
 
     def load(self):
+        config = get_config()
         self.ui.local_cover_regex_edit.setText(config.setting["local_cover_regex"])
 
     def save(self):
+        config = get_config()
         config.setting["local_cover_regex"] = self.ui.local_cover_regex_edit.text()
 
 
@@ -78,6 +82,7 @@ class CoverArtProviderLocal(CoverArtProvider):
     _known_types = set([t['name'] for t in CAA_TYPES])
 
     def queue_images(self):
+        config = get_config()
         _match_re = re.compile(config.setting['local_cover_regex'], re.IGNORECASE)
         dirs_done = set()
 

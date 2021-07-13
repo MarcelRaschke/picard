@@ -3,11 +3,11 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2007, 2014 Lukáš Lalinský
-# Copyright (C) 2008, 2018-2019 Philipp Wolfer
+# Copyright (C) 2008, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011, 2013 Michael Wiencek
 # Copyright (C) 2011, 2019 Wieland Hoffmann
 # Copyright (C) 2013-2014 Sophist-UK
-# Copyright (C) 2013-2014, 2018 Laurent Monin
+# Copyright (C) 2013-2014, 2018, 2020 Laurent Monin
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Frederik “Freso” S. Olesen
 # Copyright (C) 2018 Bob Swift
@@ -30,11 +30,17 @@
 
 from PyQt5 import QtCore
 
-from picard import config
+from picard.config import (
+    BoolOption,
+    IntOption,
+    TextOption,
+    get_config,
+)
 from picard.const import (
     MUSICBRAINZ_SERVERS,
     PROGRAM_UPDATE_LEVELS,
 )
+from picard.util.mbserver import is_official_server
 
 from picard.ui.options import (
     OptionsPage,
@@ -53,20 +59,20 @@ class GeneralOptionsPage(OptionsPage):
     HELP_URL = '/config/options_general.html'
 
     options = [
-        config.TextOption("setting", "server_host", MUSICBRAINZ_SERVERS[0]),
-        config.IntOption("setting", "server_port", 443),
-        config.TextOption("persist", "oauth_refresh_token", ""),
-        config.BoolOption("setting", "analyze_new_files", False),
-        config.BoolOption("setting", "ignore_file_mbids", False),
-        config.TextOption("persist", "oauth_refresh_token", ""),
-        config.TextOption("persist", "oauth_refresh_token_scopes", ""),
-        config.TextOption("persist", "oauth_access_token", ""),
-        config.IntOption("persist", "oauth_access_token_expires", 0),
-        config.TextOption("persist", "oauth_username", ""),
-        config.BoolOption("setting", "check_for_updates", True),
-        config.IntOption("setting", "update_check_days", 7),
-        config.IntOption("setting", "update_level", 0),
-        config.IntOption("persist", "last_update_check", 0),
+        TextOption("setting", "server_host", MUSICBRAINZ_SERVERS[0]),
+        IntOption("setting", "server_port", 443),
+        BoolOption("setting", "use_server_for_submission", False),
+        BoolOption("setting", "analyze_new_files", False),
+        BoolOption("setting", "ignore_file_mbids", False),
+        TextOption("persist", "oauth_refresh_token", ""),
+        TextOption("persist", "oauth_refresh_token_scopes", ""),
+        TextOption("persist", "oauth_access_token", ""),
+        IntOption("persist", "oauth_access_token_expires", 0),
+        TextOption("persist", "oauth_username", ""),
+        BoolOption("setting", "check_for_updates", True),
+        IntOption("setting", "update_check_days", 7),
+        IntOption("setting", "update_level", 0),
+        IntOption("persist", "last_update_check", 0),
     ]
 
     def __init__(self, parent=None):
@@ -74,13 +80,17 @@ class GeneralOptionsPage(OptionsPage):
         self.ui = Ui_GeneralOptionsPage()
         self.ui.setupUi(self)
         self.ui.server_host.addItems(MUSICBRAINZ_SERVERS)
+        self.ui.server_host.currentTextChanged.connect(self.update_server_host)
         self.ui.login.clicked.connect(self.login)
         self.ui.logout.clicked.connect(self.logout)
         self.update_login_logout()
 
     def load(self):
+        config = get_config()
         self.ui.server_host.setEditText(config.setting["server_host"])
         self.ui.server_port.setValue(config.setting["server_port"])
+        self.ui.use_server_for_submission.setChecked(config.setting["use_server_for_submission"])
+        self.update_server_host()
         self.ui.analyze_new_files.setChecked(config.setting["analyze_new_files"])
         self.ui.ignore_file_mbids.setChecked(config.setting["ignore_file_mbids"])
         if self.tagger.autoupdate_enabled:
@@ -96,8 +106,10 @@ class GeneralOptionsPage(OptionsPage):
             self.ui.update_check_groupbox.hide()
 
     def save(self):
+        config = get_config()
         config.setting["server_host"] = self.ui.server_host.currentText().strip()
         config.setting["server_port"] = self.ui.server_port.value()
+        config.setting["use_server_for_submission"] = self.ui.use_server_for_submission.isChecked()
         config.setting["analyze_new_files"] = self.ui.analyze_new_files.isChecked()
         config.setting["ignore_file_mbids"] = self.ui.ignore_file_mbids.isChecked()
         if self.tagger.autoupdate_enabled:
@@ -105,8 +117,16 @@ class GeneralOptionsPage(OptionsPage):
             config.setting["update_level"] = self.ui.update_level.currentData(QtCore.Qt.UserRole)
             config.setting["update_check_days"] = self.ui.update_check_days.value()
 
+    def update_server_host(self):
+        host = self.ui.server_host.currentText().strip()
+        if host and is_official_server(host):
+            self.ui.server_host_primary_warning.hide()
+        else:
+            self.ui.server_host_primary_warning.show()
+
     def update_login_logout(self):
         if self.tagger.webservice.oauth_manager.is_logged_in():
+            config = get_config()
             self.ui.logged_in.setText(_("Logged in as <b>%s</b>.") % config.persist["oauth_username"])
             self.ui.logged_in.show()
             self.ui.login.hide()

@@ -68,8 +68,8 @@ from picard import (
 )
 
 
-if sys.version_info < (3, 5):
-    sys.exit("ERROR: You need Python 3.5 or higher to use Picard.")
+if sys.version_info < (3, 6):
+    sys.exit("ERROR: You need Python 3.6 or higher to use Picard.")
 
 PACKAGE_NAME = "picard"
 APPDATA_FILE = PICARD_APP_ID + '.appdata.xml'
@@ -740,15 +740,24 @@ def _picard_packages():
 
 
 this_directory = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
-    long_description = f.read()
+
+
+def _get_description():
+    with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
+        return f.read()
+
+
+def _get_requirements():
+    with open(os.path.join(this_directory, 'requirements.txt'), encoding='utf-8') as f:
+        return f.readlines()
+
 
 args = {
     'name': PACKAGE_NAME,
     'version': PICARD_VERSION_STR_SHORT,
     'description': 'The next generation MusicBrainz tagger',
     'keywords': 'MusicBrainz metadata tagger picard',
-    'long_description': long_description,
+    'long_description': _get_description(),
     'long_description_content_type': 'text/markdown',
     'url': 'https://picard.musicbrainz.org/',
     'package_dir': {'picard': 'picard'},
@@ -772,8 +781,8 @@ args = {
         'patch_version': picard_patch_version,
     },
     'scripts': ['scripts/' + PACKAGE_NAME],
-    'install_requires': ['PyQt5', 'mutagen', 'python-dateutil'],
-    'python_requires': '~=3.5',
+    'install_requires': _get_requirements(),
+    'python_requires': '~=3.6',
     'classifiers': [
         'License :: OSI Approved :: GNU General Public License v2 or later (GPLv2+)',
         'Development Status :: 5 - Production/Stable',
@@ -782,7 +791,6 @@ args = {
         'Environment :: X11 Applications :: Qt',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3 :: Only',
-        'Programming Language :: Python :: 3.5',
         'Programming Language :: Python :: 3.6',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',

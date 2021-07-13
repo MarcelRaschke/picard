@@ -3,13 +3,13 @@
 # Picard, the next-generation MusicBrainz tagger
 #
 # Copyright (C) 2006-2007 Lukáš Lalinský
-# Copyright (C) 2009, 2014, 2019-2020 Philipp Wolfer
+# Copyright (C) 2009, 2014, 2019-2021 Philipp Wolfer
 # Copyright (C) 2012-2013 Michael Wiencek
 # Copyright (C) 2014, 2017 Sophist-UK
 # Copyright (C) 2016-2017 Sambhav Kothari
 # Copyright (C) 2017 Ville Skyttä
-# Copyright (C) 2018 Laurent Monin
 # Copyright (C) 2018 Vishal Choudhary
+# Copyright (C) 2018, 2020-2021 Laurent Monin
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -32,7 +32,10 @@ import re
 
 from PyQt5 import QtWidgets
 
-from picard import config
+from picard.config import (
+    TextOption,
+    get_config,
+)
 from picard.script.parser import normalize_tagname
 from picard.util.tags import display_tag_name
 
@@ -95,17 +98,16 @@ class TagMatchExpression:
 
 class TagsFromFileNamesDialog(PicardDialog):
 
-    autorestore = False
+    help_url = 'doc_tags_from_filenames'
 
     options = [
-        config.TextOption("persist", "tags_from_filenames_format", ""),
+        TextOption("persist", "tags_from_filenames_format", ""),
     ]
 
     def __init__(self, files, parent=None):
         super().__init__(parent)
         self.ui = Ui_TagsFromFileNamesDialog()
         self.ui.setupUi(self)
-        self.restore_geometry()
         items = [
             "%artist%/%album%/%title%",
             "%artist%/%album%/%tracknumber% %title%",
@@ -115,6 +117,7 @@ class TagsFromFileNamesDialog(PicardDialog):
             "%artist% - %album%/%tracknumber% %title%",
             "%artist% - %album%/%tracknumber% - %title%",
         ]
+        config = get_config()
         tff_format = config.persist["tags_from_filenames_format"]
         if tff_format not in items:
             selected_index = 0
@@ -124,10 +127,12 @@ class TagsFromFileNamesDialog(PicardDialog):
             selected_index = items.index(tff_format)
         self.ui.format.addItems(items)
         self.ui.format.setCurrentIndex(selected_index)
+        self.ui.buttonbox.addButton(StandardButton(StandardButton.HELP), QtWidgets.QDialogButtonBox.HelpRole)
         self.ui.buttonbox.addButton(StandardButton(StandardButton.OK), QtWidgets.QDialogButtonBox.AcceptRole)
         self.ui.buttonbox.addButton(StandardButton(StandardButton.CANCEL), QtWidgets.QDialogButtonBox.RejectRole)
         self.ui.buttonbox.accepted.connect(self.accept)
         self.ui.buttonbox.rejected.connect(self.reject)
+        self.ui.buttonbox.helpRequested.connect(self.show_help)
         self.ui.preview.clicked.connect(self.preview)
         self.ui.files.setHeaderLabels([_("File Name")])
         self.files = files
@@ -158,5 +163,6 @@ class TagsFromFileNamesDialog(PicardDialog):
             for name, values in metadata.items():
                 file.metadata[name] = values
             file.update()
+        config = get_config()
         config.persist["tags_from_filenames_format"] = self.ui.format.currentText()
         super().accept()

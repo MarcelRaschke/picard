@@ -6,7 +6,7 @@
 # Copyright (C) 2006-2009, 2011-2014, 2017 Lukáš Lalinský
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2008 amckinle
-# Copyright (C) 2008-2010, 2014-2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2008-2010, 2014-2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2009 Carlin Mangar
 # Copyright (C) 2010 Andrew Barnert
 # Copyright (C) 2011-2014 Michael Wiencek
@@ -16,7 +16,7 @@
 # Copyright (C) 2013 Ionuț Ciocîrlan
 # Copyright (C) 2013 brainz34
 # Copyright (C) 2013-2014, 2017 Sophist-UK
-# Copyright (C) 2013-2015, 2017-2019 Laurent Monin
+# Copyright (C) 2013-2015, 2017-2020 Laurent Monin
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 Simon Legner
 # Copyright (C) 2016 Suhas
@@ -26,6 +26,7 @@
 # Copyright (C) 2018 virusMac
 # Copyright (C) 2019 Joel Lintunen
 # Copyright (C) 2020 Gabriel Ferreira
+# Copyright (C) 2020 Julius Michaelis
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -44,6 +45,7 @@
 
 import argparse
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 import logging
 import os.path
@@ -182,21 +184,18 @@ class Tagger(QtWidgets.QApplication):
         if picard_args.debug or "PICARD_DEBUG" in os.environ:
             self.set_log_level(logging.DEBUG)
 
-        # FIXME: Figure out what's wrong with QThreadPool.globalInstance().
-        # It's a valid reference, but its start() method doesn't work.
-        self.thread_pool = QtCore.QThreadPool(self)
+        # Default thread pool
+        self.thread_pool = ThreadPoolExecutor()
 
         # Provide a separate thread pool for operations that should not be
         # delayed by longer background processing tasks, e.g. because the user
         # expects instant feedback instead of waiting for a long list of
         # operations to finish.
-        self.priority_thread_pool = QtCore.QThreadPool(self)
-        self.priority_thread_pool.setMaxThreadCount(1)
+        self.priority_thread_pool = ThreadPoolExecutor(max_workers=1)
 
         # Use a separate thread pool for file saving, with a thread count of 1,
         # to avoid race conditions in File._save_and_rename.
-        self.save_thread_pool = QtCore.QThreadPool(self)
-        self.save_thread_pool.setMaxThreadCount(1)
+        self.save_thread_pool = ThreadPoolExecutor(max_workers=1)
 
         if not IS_WIN:
             # Set up signal handling
@@ -272,6 +271,7 @@ class Tagger(QtWidgets.QApplication):
             self.pluginmanager.load_plugins_from_directory(USER_PLUGIN_DIR)
 
         self.browser_integration = BrowserIntegration()
+        self.browser_integration.listen_port_changed.connect(self.listen_port_changed)
 
         self._pending_files_count = 0
         self.files = {}
@@ -374,9 +374,9 @@ class Tagger(QtWidgets.QApplication):
         self.stopping = True
         log.debug("Picard stopping")
         self._acoustid.done()
-        self.thread_pool.waitForDone()
-        self.save_thread_pool.waitForDone()
-        self.priority_thread_pool.waitForDone()
+        self.thread_pool.shutdown()
+        self.save_thread_pool.shutdown()
+        self.priority_thread_pool.shutdown()
         self.browser_integration.stop()
         self.webservice.stop()
         self.run_cleanup()
@@ -389,14 +389,19 @@ class Tagger(QtWidgets.QApplication):
             del self._cmdline_files
 
     def run(self):
-        config = get_config()
-        if config.setting["browser_integration"]:
-            self.browser_integration.start()
+        self.update_browser_integration()
         self.window.show()
         QtCore.QTimer.singleShot(0, self._run_init)
         res = self.exec_()
         self.exit()
         return res
+
+    def update_browser_integration(self):
+        config = get_config()
+        if config.setting["browser_integration"]:
+            self.browser_integration.start()
+        else:
+            self.browser_integration.stop()
 
     def event(self, event):
         if isinstance(event, thread.ProxyToMainEvent):
@@ -661,6 +666,15 @@ class Tagger(QtWidgets.QApplication):
         """Save the specified objects."""
         for file in iter_files_from_objects(objects, save=True):
             file.save()
+
+    def load_mbid(self, type, mbid):
+        self.bring_tagger_front()
+        if type == 'album':
+            self.load_album(mbid)
+        elif type == 'nat':
+            self.load_nat(mbid)
+        else:
+            log.warning('Unknown type to load: %s', type)
 
     def load_album(self, album_id, discid=None):
         album_id = self.mbid_redirects.get(album_id, album_id)
@@ -940,6 +954,8 @@ def process_picard_args():
                         help="do not restore positions and/or sizes")
     parser.add_argument("-P", "--no-plugins", action='store_true',
                         help="do not load any plugins")
+    parser.add_argument("--no-crash-dialog", action='store_true',
+                        help="disable the crash dialog")
     parser.add_argument('-v', '--version', action='store_true',
                         help="display version information and exit")
     parser.add_argument("-V", "--long-version", action='store_true',

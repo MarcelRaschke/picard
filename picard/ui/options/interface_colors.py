@@ -2,8 +2,8 @@
 #
 # Picard, the next-generation MusicBrainz tagger
 #
-# Copyright (C) 2019 Laurent Monin
-# Copyright (C) 2019-2020 Philipp Wolfer
+# Copyright (C) 2019-2020 Laurent Monin
+# Copyright (C) 2019-2021 Philipp Wolfer
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -28,7 +28,7 @@ from PyQt5 import (
     QtWidgets,
 )
 
-from picard import config
+from picard.config import Option
 
 from picard.ui.colors import (
     InterfaceColors,
@@ -92,8 +92,8 @@ class InterfaceColorsOptionsPage(OptionsPage):
     HELP_URL = '/config/options_interface_colors.html'
 
     options = [
-        config.Option("setting", "interface_colors", InterfaceColors(dark_theme=False).get_colors()),
-        config.Option("setting", "interface_colors_dark", InterfaceColors(dark_theme=True).get_colors()),
+        Option("setting", "interface_colors", InterfaceColors(dark_theme=False).get_colors()),
+        Option("setting", "interface_colors_dark", InterfaceColors(dark_theme=True).get_colors()),
     ]
 
     def __init__(self, parent=None):

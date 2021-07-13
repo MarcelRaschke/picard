@@ -6,12 +6,12 @@
 # Copyright (C) 2006-2007, 2011 Lukáš Lalinský
 # Copyright (C) 2008 Gary van der Merwe
 # Copyright (C) 2009 Carlin Mangar
-# Copyright (C) 2010, 2014-2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2010, 2014-2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2011 Chad Wilson
 # Copyright (C) 2011 Wieland Hoffmann
 # Copyright (C) 2011-2013 Michael Wiencek
 # Copyright (C) 2014, 2017 Sophist-UK
-# Copyright (C) 2014-2015, 2018-2019 Laurent Monin
+# Copyright (C) 2014-2015, 2018-2021 Laurent Monin
 # Copyright (C) 2016 Mark Trolley
 # Copyright (C) 2016 Rahul Raturi
 # Copyright (C) 2016 Suhas
@@ -20,6 +20,8 @@
 # Copyright (C) 2018 Calvin Walton
 # Copyright (C) 2018 Vishal Choudhary
 # Copyright (C) 2019 Joel Lintunen
+# Copyright (C) 2020 Adam James
+# Copyright (C) 2021 Petit Minion
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -37,17 +39,14 @@
 
 
 from collections import defaultdict
-from functools import partial
 from itertools import filterfalse
 import re
 import traceback
 
 from PyQt5 import QtCore
 
-from picard import (
-    config,
-    log,
-)
+from picard import log
+from picard.config import get_config
 from picard.const import (
     DATA_TRACK_TITLE,
     SILENCE_TRACK_TITLE,
@@ -69,6 +68,7 @@ from picard.script import (
     ScriptParser,
     enabled_tagger_scripts_texts,
 )
+from picard.util import pattern_as_regex
 from picard.util.imagelist import (
     add_metadata_images,
     remove_metadata_images,
@@ -97,23 +97,12 @@ class TagGenreFilter:
                 remain = line[1:].strip()
                 if not remain:
                     continue
-                if len(remain) > 2 and remain[0] == '/' and remain[-1] == '/':
-                    remain = remain[1:-1]
-                    try:
-                        regex_search = re.compile(remain, re.IGNORECASE)
-                    except Exception as e:
-                        log.error("Failed to compile regex /%s/: %s", remain, e)
-                        self.errors[lineno] = str(e)
-                        regex_search = None
-                else:
-                    # FIXME?: only support '*' (not '?' or '[abc]')
-                    # replace multiple '*' by one
-                    star = re.escape('*')
-                    remain = re.sub(star + '+', '*', remain)
-                    regex = '.*'.join([re.escape(x) for x in remain.split('*')])
-                    regex_search = re.compile('^' + regex + '$', re.IGNORECASE)
-                if regex_search:
+                try:
+                    regex_search = pattern_as_regex(remain, allow_wildcards=True, flags=re.IGNORECASE)
                     self.match_regexes[_list].append(regex_search)
+                except re.error as e:
+                    log.error("Failed to compile regex /%s/: %s", remain, e)
+                    self.errors[lineno] = str(e)
 
     def skip(self, tag):
         if not self.match_regexes:
@@ -176,6 +165,7 @@ class Track(DataObject, FileListItem):
             return
         # Run the scripts for the file to allow usage of
         # file specific metadata and variables
+        config = get_config()
         if config.setting["clear_existing_tags"]:
             metadata = Metadata(self.orig_metadata)
             metadata_proxy = MultiMetadataProxy(metadata, file.metadata)
@@ -250,6 +240,8 @@ class Track(DataObject, FileListItem):
         if column == 'title':
             prefix = "%s-" % m['discnumber'] if m['discnumber'] and m['totaldiscs'] != "1" else ""
             return "%s%s  %s" % (prefix, m['tracknumber'].zfill(2), m['title'])
+        elif column == 'covercount':
+            return self.cover_art_description()
         elif column in m:
             return m[column]
         elif self.num_linked_files == 1:
@@ -271,6 +263,7 @@ class Track(DataObject, FileListItem):
         return self.ignored_for_completeness() or self.num_linked_files == 1
 
     def ignored_for_completeness(self):
+        config = get_config()
         if (config.setting['completeness_ignore_videos'] and self.is_video()) \
                 or (config.setting['completeness_ignore_pregap'] and self.is_pregap()) \
                 or (config.setting['completeness_ignore_data'] and self.is_data()) \
@@ -286,6 +279,7 @@ class Track(DataObject, FileListItem):
         return track_artist
 
     def _customize_metadata(self):
+        config = get_config()
         tm = self.metadata
 
         # Custom VA name
@@ -306,6 +300,7 @@ class Track(DataObject, FileListItem):
             tm.apply_func(asciipunct)
 
     def _convert_folksonomy_tags_to_genre(self):
+        config = get_config()
         # Combine release and track tags
         tags = dict(self.genres)
         self.merge_genres(tags, self.album.genres)
@@ -373,6 +368,7 @@ class NonAlbumTrack(Track):
         self.clear_errors()
         self.loaded = False
         self.album.update(True)
+        config = get_config()
         mblogin = False
         inc = ["artist-credits", "artists", "aliases"]
         if config.setting["track_ars"]:
@@ -383,7 +379,7 @@ class NonAlbumTrack(Track):
             mblogin = True
             inc += ["user-ratings"]
         self.tagger.mb_api.get_track_by_id(self.id,
-                                           partial(self._recording_request_finished),
+                                           self._recording_request_finished,
                                            inc, mblogin=mblogin,
                                            priority=priority,
                                            refresh=refresh)
@@ -424,6 +420,9 @@ class NonAlbumTrack(Track):
     def _customize_metadata(self):
         super()._customize_metadata()
         self.metadata['album'] = self.album.metadata['album']
+        if self.metadata['~recording_firstreleasedate']:
+            self.metadata['originaldate'] = self.metadata['~recording_firstreleasedate']
+            self.metadata['originalyear'] = self.metadata['originaldate'][:4]
 
     def run_when_loaded(self, func):
         if self.loaded:

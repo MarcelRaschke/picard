@@ -6,14 +6,15 @@
 # Copyright (C) 2006-2007, 2012 Lukáš Lalinský
 # Copyright (C) 2011-2014 Michael Wiencek
 # Copyright (C) 2012 Nikolai Prokoschenko
-# Copyright (C) 2013-2014 Sophist-UK
-# Copyright (C) 2013-2014, 2017-2019 Laurent Monin
+# Copyright (C) 2013-2014, 2017-2021 Laurent Monin
+# Copyright (C) 2013-2014, 2021 Sophist-UK
 # Copyright (C) 2015 Ohm Patel
 # Copyright (C) 2015 Wieland Hoffmann
-# Copyright (C) 2015, 2018-2020 Philipp Wolfer
+# Copyright (C) 2015, 2018-2021 Philipp Wolfer
 # Copyright (C) 2016-2018 Sambhav Kothari
 # Copyright (C) 2018 Vishal Choudhary
-# Copyright (C) 2020 Gabriel Ferreira
+# Copyright (C) 2020 Felix Schwarz
+# Copyright (C) 2020-2021 Gabriel Ferreira
 #
 # This program is free software; you can redistribute it and/or
 # modify it under the terms of the GNU General Public License
@@ -40,7 +41,6 @@ from PyQt5 import (
 )
 
 from picard.album import Album
-from picard.browser.browser import BrowserIntegration
 from picard.browser.filelookup import FileLookup
 from picard.cluster import Cluster
 from picard.config import (
@@ -240,7 +240,6 @@ class MetadataBox(QtWidgets.QTableWidget):
         self.changes_first_action.setCheckable(True)
         self.changes_first_action.setChecked(config.persist["show_changes_first"])
         self.changes_first_action.toggled.connect(self.toggle_changes_first)
-        self.browser_integration = BrowserIntegration()
         # TR: Keyboard shortcut for "Add New Tag..."
         self.add_tag_shortcut = QtWidgets.QShortcut(QtGui.QKeySequence(_("Alt+Shift+A")), self, partial(self.edit_tag, ""))
         self.add_tag_action.setShortcut(self.add_tag_shortcut.key())
@@ -258,7 +257,7 @@ class MetadataBox(QtWidgets.QTableWidget):
         config = get_config()
         return FileLookup(self, config.setting["server_host"],
                           config.setting["server_port"],
-                          self.browser_integration.port)
+                          self.tagger.browser_integration.port)
 
     def lookup_tags(self):
         lookup = self.get_file_lookup()
@@ -450,8 +449,9 @@ class MetadataBox(QtWidgets.QTableWidget):
         event.accept()
 
     def _apply_update_funcs(self, funcs):
-        for f in funcs:
-            f()
+        with self.parent.ignore_selection_changes:
+            for f in funcs:
+                f()
         self.parent.update_selection(new_selection=False, drop_album_caches=True)
 
     def edit_tag(self, tag):
@@ -586,14 +586,16 @@ class MetadataBox(QtWidgets.QTableWidget):
         top_tags = config.setting['metadatabox_top_tags']
         top_tags_set = set(top_tags)
 
+        settings = config.setting.as_dict()
+
         for file in files:
-            new_metadata = file.new_metadata
+            new_metadata = file.metadata
             orig_metadata = file.orig_metadata
-            tags = set(list(new_metadata.keys()) + list(orig_metadata.keys()))
+            tags = set(new_metadata) | set(orig_metadata)
 
             for name in filter(lambda x: not x.startswith("~") and file.supports_tag(x), tags):
-                new_values = new_metadata.getall(name)
-                orig_values = orig_metadata.getall(name)
+                new_values = file.format_specific_metadata(new_metadata, name, settings)
+                orig_values = file.format_specific_metadata(orig_metadata, name, settings)
 
                 if not clear_existing_tags and not new_values:
                     new_values = list(orig_values or [""])
